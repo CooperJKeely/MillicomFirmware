@@ -1,0 +1,9 @@
+source "Kconfig.zephyr"
+
+config MILLIMOBILE_ADV
+	bool "Enable Advertisement"
+	default n
+
+config MILLIMOBILE_SYNC
+	bool "Enable Sync"
+	default n
