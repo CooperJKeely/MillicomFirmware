@@ -8,11 +8,13 @@ static K_SEM_DEFINE(sem_discovered, 0, 1);
 static K_SEM_DEFINE(sem_written, 0, 1);
 static K_SEM_DEFINE(sem_disconnected, 0, 1);
 
-struct k_poll_event events[] = {
+static struct k_poll_event events[] = {
 	K_POLL_EVENT_STATIC_INITIALIZER(K_POLL_TYPE_SEM_AVAILABLE, K_POLL_MODE_NOTIFY_ONLY,
 					&sem_connected, 0),
 	K_POLL_EVENT_STATIC_INITIALIZER(K_POLL_TYPE_SEM_AVAILABLE, K_POLL_MODE_NOTIFY_ONLY,
 					&sem_disconnected, 0),
+	K_POLL_EVENT_STATIC_INITIALIZER(K_POLL_TYPE_SIGNAL, K_POLL_MODE_NOTIFY_ONLY,
+					&mode_switch_signal, 0),
 };
 
 static struct bt_uuid_128 pawr_char_uuid =
@@ -60,7 +62,7 @@ static void request_cb(struct bt_le_ext_adv *adv, const struct bt_le_per_adv_dat
 	if (err) {
 		printk("Failed to set subevent data (err %d)\n", err);
 	} else {
-		printk("Subevent data set %d", counter);
+		printk("Subevent data set %d\n", counter);
 	}
 }
 
@@ -81,7 +83,7 @@ static struct bt_conn *default_conn;
 static void response_cb(struct bt_le_ext_adv *adv, struct bt_le_per_adv_response_info *info,
 		     struct net_buf_simple *buf){
 	if (buf) {
-		LOG_INF("Response: subevent %d, slot %d", info->subevent, info->response_slot);
+		printk("Response: subevent %d, slot %d", info->subevent, info->response_slot);
 		bt_data_parse(buf, print_ad_field, NULL);
 	}
 }
@@ -163,7 +165,7 @@ static void device_found(const bt_addr_le_t *addr, int8_t rssi, uint8_t type,
 	err = bt_conn_le_create(addr, BT_CONN_LE_CREATE_CONN, BT_LE_CONN_PARAM_DEFAULT,
 				&default_conn);
 	if (err) {
-		LOG_WRN("Create conn to %s failed (%u)\n", addr_str, err);
+		printk("Create conn to %s failed (%u)\n", addr_str, err);
 	}
 }
 
@@ -172,7 +174,7 @@ static uint8_t discover_func(struct bt_conn *conn, const struct bt_gatt_attr *at
 	struct bt_gatt_chrc *chrc;
 	char str[BT_UUID_STR_LEN];
 
-	LOG_INF("Discovery: attr %p\n", attr);
+	printk("Discovery: attr %p\n", attr);
 
 	if (!attr) {
 		return BT_GATT_ITER_STOP;
@@ -181,11 +183,11 @@ static uint8_t discover_func(struct bt_conn *conn, const struct bt_gatt_attr *at
 	chrc = (struct bt_gatt_chrc *)attr->user_data;
 
 	bt_uuid_to_str(chrc->uuid, str, sizeof(str));
-	LOG_INF("UUID %s\n", str);
+	printk("UUID %s\n", str);
 
 	if (!bt_uuid_cmp(chrc->uuid, &pawr_char_uuid.uuid)) {
 		pawr_attr_handle = chrc->value_handle;
-		LOG_INF("Characteristic handle: %d\n", pawr_attr_handle);
+		printk("Characteristic handle: %d\n", pawr_attr_handle);
 		k_sem_give(&sem_discovered);
 	}
 
@@ -194,7 +196,7 @@ static uint8_t discover_func(struct bt_conn *conn, const struct bt_gatt_attr *at
 
 static void write_func(struct bt_conn *conn, uint8_t err, struct bt_gatt_write_params *params){
 	if (err) {
-		LOG_ERR("Write failed (err %d)\n", err);
+		printk("Write failed (err %d)\n", err);
 		return;
 	}
 
@@ -222,70 +224,71 @@ void adv_thread(void){
 	struct pawr_timing sync_config;
 
 	init_bufs();
+	num_synced = 0;
+	k_poll_signal_reset(events[2].signal);
 
-	LOG_INF("Starting Periodic Advertising Demo\n");
-
-	/* Initialize the Bluetooth Subsystem */
-	err = bt_enable(NULL);
-	if (err) {
-		LOG_ERR("Bluetooth init failed (err %d)\n", err);
-		return ;
-	}
+	LOG_INF("Starting Periodic Advertising Demo");
 
 	/* Create a non-connectable advertising set */
 	err = bt_le_ext_adv_create(BT_LE_EXT_ADV_NCONN, &adv_cb, &pawr_adv);
 	if (err) {
-		LOG_ERR("Failed to create advertising set (err %d)\n", err);
+		LOG_ERR("Failed to create advertising set (err %d)", err);
 		return ;
 	}
 
 	/* Set periodic advertising parameters */
 	err = bt_le_per_adv_set_param(pawr_adv, &per_adv_params);
 	if (err) {
-		LOG_ERR("Failed to set periodic advertising parameters (err %d)\n", err);
+		LOG_ERR("Failed to set periodic advertising parameters (err %d)", err);
 		return ;
 	}
 
 	/* Enable Periodic Advertising */
-	LOG_INF("Start Periodic Advertising\n");
+	LOG_INF("Start Periodic Advertising");
 	err = bt_le_per_adv_start(pawr_adv);
 	if (err) {
-		LOG_ERR("Failed to enable periodic advertising (err %d)\n", err);
+		LOG_ERR("Failed to enable periodic advertising (err %d)", err);
 		return ;
 	}
 
-	LOG_INF("Start Extended Advertising\n");
+	LOG_INF("Start Extended Advertising");
 	err = bt_le_ext_adv_start(pawr_adv, BT_LE_EXT_ADV_START_DEFAULT);
 	if (err) {
-		LOG_ERR("Failed to start extended advertising (err %d)\n", err);
+		LOG_ERR("Failed to start extended advertising (err %d)", err);
 		return ;
 	}
 
 	while (num_synced < MAX_SYNCS) {
+
 		/* Enable continuous scanning */
 		err = bt_le_scan_start(BT_LE_SCAN_PASSIVE_CONTINUOUS, device_found);
 		if (err) {
-			LOG_WRN("Scanning failed to start (err %d)\n", err);
+			LOG_WRN("Scanning failed to start (err %d)", err);
 			return ;
 		}
 
-		LOG_INF("Scanning successfully started\n");
+		LOG_INF("Scanning successfully started");
 
 		/* Wait for either remote info available or involuntary disconnect */
-		k_poll(events, ARRAY_SIZE(events), K_FOREVER);
+		err = k_poll(events, ARRAY_SIZE(events), K_FOREVER);
+		if (err == 0 && events[2].signal->signaled){
+			k_poll_signal_reset(events[2].signal);
+			goto mode_switch;
+		}	
+
 		err = k_sem_take(&sem_connected, K_NO_WAIT);
 		if (err) {
-			LOG_WRN("Disconnected before remote info available\n");
+			LOG_WRN("Disconnected before remote info available");
 			goto disconnected;
 		}
-
+		
 		err = bt_le_per_adv_set_info_transfer(pawr_adv, default_conn, 0);
 		if (err) {
-			LOG_WRN("Failed to send PAST (err %d)\n", err);
+			LOG_WRN("Failed to send PAST (err %d)", err);
 			goto disconnect;
 		}
 
-		LOG_INF("PAST sent\n");
+		LOG_INF("PAST sent");
 
 		discover_params.uuid = &pawr_char_uuid.uuid;
 		discover_params.func = discover_func;
@@ -294,15 +297,15 @@ void adv_thread(void){
 		discover_params.type = BT_GATT_DISCOVER_CHARACTERISTIC;
 		err = bt_gatt_discover(default_conn, &discover_params);
 		if (err) {
-			LOG_WRN("Discovery failed (err %d)\n", err);
+			LOG_WRN("Discovery failed (err %d)", err);
 			goto disconnect;
 		}
 
-		LOG_INF("Discovery started\n");
+		LOG_INF("Discovery started");
 
 		err = k_sem_take(&sem_discovered, K_SECONDS(10));
 		if (err) {
-			LOG_WRN("Timed out during GATT discovery\n");
+			LOG_WRN("Timed out during GATT discovery");
 			goto disconnect;
 		}
 
@@ -318,21 +321,21 @@ void adv_thread(void){
 
 		err = bt_gatt_write(default_conn, &write_params);
 		if (err) {
-			LOG_WRN("Write failed (err %d)\n", err);
+			LOG_WRN("Write failed (err %d)", err);
 			num_synced--;
 			goto disconnect;
 		}
 
-		LOG_INF("Write started\n");
+		LOG_INF("Write started");
 
 		err = k_sem_take(&sem_written, K_SECONDS(10));
 		if (err) {
-			LOG_WRN("Timed out during GATT write\n");
+			LOG_WRN("Timed out during GATT write");
 			num_synced--;
 			goto disconnect;
 		}
 
-		LOG_WRN("PAwR config written to sync %d, disconnecting\n", num_synced - 1);
+		LOG_WRN("PAwR config written to sync %d, disconnecting", num_synced - 1);
 
 disconnect:
 		/* Adding delay (2ms * interval value, using 2ms intead of the 1.25ms
@@ -351,11 +354,31 @@ disconnected:
 
 		bt_conn_unref(default_conn);
 		default_conn = NULL;
+
 	}
 
-	LOG_INF("Maximum numnber of syncs onboarded\n");
+	LOG_INF("Maximum number of syncs onboarded");
 
 	while (true) {
-		k_sleep(K_SECONDS(1));
+		err = k_poll(&events[2], 1, K_FOREVER);
+		if (err == 0 && events[2].signal->signaled) {
+			k_poll_signal_reset(events[2].signal);
+			goto mode_switch;
+		}
 	}
+
+mode_switch:
+		LOG_INF("Power mode is low, exiting");
+		bt_le_ext_adv_stop(pawr_adv);
+		bt_le_per_adv_stop(pawr_adv);
+		bt_le_ext_adv_delete(pawr_adv);
+		bt_le_scan_stop();
+		if (default_conn) {
+			bt_conn_disconnect(default_conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
+			bt_conn_unref(default_conn);
+			default_conn = NULL;
+		}
+		return ;
+
 }
+

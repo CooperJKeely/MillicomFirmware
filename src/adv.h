@@ -6,6 +6,7 @@
 #include <zephyr/bluetooth/conn.h>
 #include <zephyr/bluetooth/gatt.h>
 #include <zephyr/bluetooth/hci.h>
+#include "mode.h"
 
 #define NUM_RSP_SLOTS 1
 #define NUM_SUBEVENTS 1

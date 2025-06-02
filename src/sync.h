@@ -6,8 +6,11 @@
 #include <zephyr/bluetooth/uuid.h>
 #include <zephyr/bluetooth/hci.h>
 #include <zephyr/sys/util.h>
+#include "mode.h"
 
 #define NAME_LEN 30
+#define timeout_threshold 3
+
 
 int bt_le_per_adv_set_response_data(struct bt_le_per_adv_sync *per_adv_sync,
 				    const struct bt_le_per_adv_response_params *params,

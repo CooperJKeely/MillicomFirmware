@@ -1,9 +1,18 @@
 source "Kconfig.zephyr"
+menu "MilliMobile"
+
+config MILLIMOBILE_MODE_SWITCHING
+	bool "Enable Mode Switching"
+	default n
 
 config MILLIMOBILE_ADV
 	bool "Enable Advertisement"
+	depends on MILLIMOBILE_MODE_SWITCHING
 	default n
 
 config MILLIMOBILE_SYNC
 	bool "Enable Sync"
+	depends on MILLIMOBILE_MODE_SWITCHING
 	default n
+
+endmenu

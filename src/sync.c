@@ -1,16 +1,28 @@
 #include "sync.h"
 
+#include <zephyr/logging/log.h>
+LOG_MODULE_REGISTER(Sync,LOG_LEVEL_DBG);
+
 static K_SEM_DEFINE(sem_per_adv, 0, 1);
 static K_SEM_DEFINE(sem_per_sync, 0, 1);
 static K_SEM_DEFINE(sem_per_sync_lost, 0, 1);
+
+static struct k_poll_event sync_events[] = {
+	K_POLL_EVENT_STATIC_INITIALIZER(K_POLL_TYPE_SEM_AVAILABLE, K_POLL_MODE_NOTIFY_ONLY,
+					&sem_per_sync, 0),
+	K_POLL_EVENT_STATIC_INITIALIZER(K_POLL_TYPE_SEM_AVAILABLE, K_POLL_MODE_NOTIFY_ONLY,
+					&sem_per_sync_lost, 0),
+	K_POLL_EVENT_STATIC_INITIALIZER(K_POLL_TYPE_SIGNAL, K_POLL_MODE_NOTIFY_ONLY,
+					&mode_switch_signal, 0),
+};
 
 static struct bt_conn *default_conn;
 static struct bt_le_per_adv_sync *default_sync;
 static struct __packed {
 	uint8_t subevent;
 	uint8_t response_slot;
-
 } pawr_timing;
+
 
 static void sync_cb(struct bt_le_per_adv_sync *sync, struct bt_le_per_adv_sync_synced_info *info)
 {
@@ -196,13 +208,8 @@ void sync_thread(void)
 	struct bt_le_per_adv_sync_transfer_param past_param;
 	int err;
 
-	printk("Starting Periodic Advertising with Responses Synchronization Demo\n");
 
-	err = bt_enable(NULL);
-	if (err) {
-		printk("Bluetooth init failed (err %d)\n", err);
-		return ;
-	}
+	LOG_INF("Starting Periodic Advertising with Responses Synchronization Demo");
 
 	bt_le_per_adv_sync_cb_register(&sync_callbacks);
 
@@ -211,34 +218,74 @@ void sync_thread(void)
 	past_param.options = BT_LE_PER_ADV_SYNC_TRANSFER_OPT_NONE;
 	err = bt_le_per_adv_sync_transfer_subscribe(NULL, &past_param);
 	if (err) {
-		printk("PAST subscribe failed (err %d)\n", err);
+		LOG_ERR("PAST subscribe failed (err %d)", err);
 		return ;
 	}
 
-	do {
+	while(1){
+		uint8_t timeout_counter = 0;
 		err = bt_le_adv_start(BT_LE_ADV_CONN_FAST_1, ad, ARRAY_SIZE(ad), NULL, 0);
 		if (err && err != -EALREADY) {
-			printk("Advertising failed to start (err %d)\n", err);
+			LOG_ERR("Advertising failed to start (err %d)", err);
 			return ;
 		}
 
-		printk("Waiting for periodic sync...\n");
-		err = k_sem_take(&sem_per_sync, K_SECONDS(10));
-		if (err) {
-			printk("Timed out while synchronizing\n");
-			continue;
+		LOG_INF("Waiting for periodic sync...");
+		while(1){
+			err = k_poll(sync_events, ARRAY_SIZE(sync_events), K_SECONDS(5));
+			if(err == 0){
+				if(sync_events[0].sem->count > 0){
+					k_sem_take(&sem_per_sync, K_NO_WAIT);	
+					LOG_INF("Periodic sync established, receiving data.");
+					goto sync_established;
+				} else if(sync_events[2].signal->signaled){
+					k_poll_signal_reset(&mode_switch_signal);
+					LOG_INF("Power mode change requested, exiting sync thread.");
+					goto mode_switch;
+				}
+			} else if (err == -EAGAIN) {
+				LOG_WRN("Polling timed out, retrying...");
+				timeout_counter++;
+				if (timeout_counter >= timeout_threshold && current_power_mode == POWER_HIGH_MODE_SYNC) {
+					current_power_mode = POWER_HIGH_MODE_ADV;	
+					LOG_INF("Power mode changed to HIGH_MODE_ADV due to timeout.");	
+					k_poll_signal_raise(&mode_switch_signal, 0);
+				}
+				continue;
+			} else {
+				LOG_ERR("Polling failed (err %d)", err);
+				return ;
+			}
 		}
-
-		printk("Periodic sync established.\n");
-
-		err = k_sem_take(&sem_per_sync_lost, K_FOREVER);
-		if (err) {
-			printk("failed (err %d)\n", err);
-			return ;
+		continue;
+sync_established:
+		LOG_INF("Periodic sync established, waiting for data...");
+		err = k_poll(&sync_events[1], 2, K_FOREVER);
+		if (err == 0){
+			if (sync_events[1].sem->count > 0){
+				k_sem_take(&sem_per_sync_lost, K_NO_WAIT);
+				LOG_INF("Periodic sync lost, re-establishing.");
+				continue;
+			} else if (sync_events[2].signal->signaled) {
+				k_poll_signal_reset(&mode_switch_signal);
+				LOG_INF("Power mode change requested, exiting sync thread.");
+				goto mode_switch;
+			}
 		}
-
-		printk("Periodic sync lost.\n");
-	} while (true);
-
+	
+	}
+mode_switch:
+	if (default_sync) {
+		bt_le_per_adv_sync_delete(default_sync);
+		default_sync = NULL;
+	}
+	if (default_conn) {
+		bt_le_per_adv_sync_transfer_unsubscribe(default_conn);
+		bt_conn_disconnect(default_conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
+		bt_conn_unref(default_conn);
+		default_conn = NULL;
+	}
+	bt_le_adv_stop();
+	LOG_INF("Exiting sync thread due to power mode change.");
 	return ;
 }
