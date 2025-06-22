@@ -7,6 +7,15 @@
 #ifdef CONFIG_MILLIMOBILE_MODE_SWITCHING
 #include "mode.h"
 #endif
+#ifdef CONFIG_MILLIMOBILE_CMD
+#include "cmdParser.h"
+typedef enum{
+	CMD_TEMP,
+	CMD_STANDBY,
+	CMD_CAPACITOR,
+} cmd_mode_t;
+extern cmd_mode_t command = 0; // Default to temp sensor mode
+#endif
 
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>

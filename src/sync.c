@@ -1,4 +1,5 @@
 #include "sync.h"
+#include "cmdParser.h"
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(Sync,LOG_LEVEL_DBG);
@@ -93,8 +94,28 @@ static void recv_cb(struct bt_le_per_adv_sync *sync,
 	int err;
 
 	if (buf && buf->len) {
-		/* Echo the data back to the advertiser */
+		/* Echo the data back to the advertiser
+		   Reset the response buffer, and assign received buffer data to it
+		*/
 		net_buf_simple_reset(&rsp_buf);
+		/* 	Entry point for changing response data based on command 
+			Copy given number of bytes from memory to the end of the buffer.
+
+			Increments the data length of the buffer to account for more data at the end.
+
+			Parameters
+    			buf	Buffer to update.
+    			mem	Location of data to be added.
+    			len	Length of data to be added
+
+			Returns
+    			The original tail of the buffer. 
+		
+			Reference Documentation:
+			https://docs.zephyrproject.org/apidoc/latest/group__net__buf.html#gac37209c1e5097e5610860943fb7d0115
+		*/
+		// Original: net_buf_simple_add_mem(&rsp_buf, buf->data, buf->len);
+
 		net_buf_simple_add_mem(&rsp_buf, buf->data, buf->len);
 
 		rsp_params.request_event = info->periodic_event_counter;
@@ -103,10 +124,25 @@ static void recv_cb(struct bt_le_per_adv_sync *sync,
 		rsp_params.response_subevent = info->subevent;
 		rsp_params.response_slot = pawr_timing.response_slot;
 
+		/* Print response data to terminal */
 		printk("Indication: subevent %d, responding in slot %d\n", info->subevent,
 		       pawr_timing.response_slot);
 		bt_data_parse(buf, print_ad_field, NULL);
 
+		/* 	Data to be sent back to the advertiser
+			Set the data for a response slot in a specific subevent of the PAwR.
+
+			This function is called by the application to set the response data.
+			The data for a response slot shall be transmitted only once.
+
+			Parameters
+    			per_adv_sync	The periodic advertising sync object.
+    			params	Parameters.
+    			data	The response data to send
+
+		   	Reference Documentation:
+		   	https://docs.zephyrproject.org/apidoc/latest/group__bt__gap.html#gaae6b8583f7d5457f20b03dccd146425e
+		*/
 		err = bt_le_per_adv_set_response_data(sync, &rsp_params, &rsp_buf);
 		if (err) {
 			printk("Failed to send response (err %d)\n", err);
