@@ -11,6 +11,6 @@ typedef enum{
 } cmd_mode_t;
 */
 
-int parse_command(void);
-int get_temperature(void);
+int8_t parse_command(void);
+int8_t get_temperature(void);
 #endif

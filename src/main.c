@@ -14,7 +14,7 @@ typedef enum{
 	CMD_STANDBY,
 	CMD_CAPACITOR,
 } cmd_mode_t;
-extern cmd_mode_t command = 0; // Default to temp sensor mode
+cmd_mode_t command = 0; // Default to temp sensor mode
 #endif
 
 #include <zephyr/kernel.h>

@@ -24,6 +24,18 @@ static struct __packed {
 	uint8_t response_slot;
 } pawr_timing;
 
+#if defined(CONFIG_MILLIMOBILE_CMD)
+// command variable from main
+typedef enum{
+	CMD_TEMP,
+	CMD_STANDBY,
+	CMD_CAPACITOR,
+} cmd_mode_t;
+extern cmd_mode_t command;
+#endif
+
+
+
 
 static void sync_cb(struct bt_le_per_adv_sync *sync, struct bt_le_per_adv_sync_synced_info *info)
 {
@@ -115,8 +127,14 @@ static void recv_cb(struct bt_le_per_adv_sync *sync,
 			https://docs.zephyrproject.org/apidoc/latest/group__net__buf.html#gac37209c1e5097e5610860943fb7d0115
 		*/
 		// Original: net_buf_simple_add_mem(&rsp_buf, buf->data, buf->len);
-
-		net_buf_simple_add_mem(&rsp_buf, buf->data, buf->len);
+	
+		#if defined(CONFIG_MILLIMOBILE_CMD)
+		// int to enum = bad - fix
+			command = buf->data;
+			net_buf_simple_add_mem(&rsp_buf, parse_command(), buf->len);
+		#else
+			net_buf_simple_add_mem(&rsp_buf, buf->data, buf->len);
+		#endif
 
 		rsp_params.request_event = info->periodic_event_counter;
 		rsp_params.request_subevent = info->subevent;

@@ -1,7 +1,7 @@
 #include "cmdParser.h"
 #include <zephyr/bluetooth/hci_vs.h>
 
-int parse_command(void){
+int8_t parse_command(void){
     switch(command) {
         case 0:
             // Temperature
@@ -18,7 +18,7 @@ int parse_command(void){
     } 
 };
 
-int get_temperature(void){
+int8_t get_temperature(void){
     // This function reads the temperature from the onboard temperature sensor
     // returns the current temperature value in celsius formatted in hex
     int err = 0;

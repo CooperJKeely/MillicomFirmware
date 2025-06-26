@@ -39,6 +39,7 @@ BUILD_ASSERT(ARRAY_SIZE(bufs) == ARRAY_SIZE(subevent_data_params));
 BUILD_ASSERT(ARRAY_SIZE(backing_store) == ARRAY_SIZE(subevent_data_params));
 
 static uint8_t counter;
+static uint8_t command = 0;
 
 static void request_cb(struct bt_le_ext_adv *adv, const struct bt_le_per_adv_data_request *request){
 	int err;
@@ -49,7 +50,9 @@ static void request_cb(struct bt_le_ext_adv *adv, const struct bt_le_per_adv_dat
 
 	for (size_t i = 0; i < to_send; i++) {
 		buf = &bufs[i];
-		buf->data[buf->len - 1] = counter++;
+		/* Data being sent to the sync device, and then sent back*/
+		// Original: buf->data[buf->len - 1] = counter++;
+		buf->data[buf->len - 1] = command;
 
 		subevent_data_params[i].subevent =
 			(request->start + i) % per_adv_params.num_subevents;

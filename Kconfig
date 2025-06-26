@@ -15,4 +15,9 @@ config MILLIMOBILE_SYNC
 	depends on MILLIMOBILE_MODE_SWITCHING
 	default n
 
+config MILLIMOBILE_CMD
+	bool "Enable command parsing"
+	depends on MILLIMOBILE_MODE_SWITCHING
+	default n
+
 endmenu
