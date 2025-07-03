@@ -31,8 +31,10 @@ void button_pressed(const struct device *dev, struct gpio_callback *cb, uint32_t
                 current_power_mode = POWER_MED_MODE_SYNC;
         } else if (current_power_mode == POWER_MED_MODE_SYNC){
                 current_power_mode = POWER_HIGH_MODE_ADV;
+        } else if (current_power_mode == POWER_HIGH_MODE_ADV){
+                current_power_mode = POWER_LOW_MODE_NONE;
         } else {
-                current_power_mode = POWER_HIGH_MODE_ADV;
+                current_power_mode = POWER_LOW_MODE_NONE;
         }
         printk("Current power mode: %d\n", current_power_mode);
 }
