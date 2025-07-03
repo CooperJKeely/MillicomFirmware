@@ -1,7 +1,13 @@
 #include "cmdParser.h"
 #include <zephyr/bluetooth/hci_vs.h>
 
-int8_t parse_command(void){
+#if defined(CONFIG_MILLIMOBILE_CMD)
+// command variable from main
+extern uint8_t command;
+#endif
+
+uint8_t parse_command(void){
+    //LOG_ERR("Beginning Comand Parsing");
     switch(command) {
         case 0:
             // Temperature
@@ -42,6 +48,8 @@ int8_t get_temperature(void){
 
     rsp_params = (void *) rsp->data;
     net_buf_unref(rsp);
+
+    printk("Current Temp: %d \n", rsp_params->temps);
 
     return rsp_params->temps;
     /*

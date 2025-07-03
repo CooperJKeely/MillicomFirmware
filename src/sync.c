@@ -1,5 +1,5 @@
 #include "sync.h"
-#include "cmdParser.h"
+#include "cmdParser.c"
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(Sync,LOG_LEVEL_DBG);
@@ -26,12 +26,7 @@ static struct __packed {
 
 #if defined(CONFIG_MILLIMOBILE_CMD)
 // command variable from main
-typedef enum{
-	CMD_TEMP,
-	CMD_STANDBY,
-	CMD_CAPACITOR,
-} cmd_mode_t;
-extern cmd_mode_t command;
+extern uint8_t command;
 #endif
 
 
@@ -129,9 +124,14 @@ static void recv_cb(struct bt_le_per_adv_sync *sync,
 		// Original: net_buf_simple_add_mem(&rsp_buf, buf->data, buf->len);
 	
 		#if defined(CONFIG_MILLIMOBILE_CMD)
-		// int to enum = bad - fix
-			command = buf->data;
-			net_buf_simple_add_mem(&rsp_buf, parse_command(), buf->len);
+			// Copy buffer data (command) into relevant variable
+			// Parse command & store result in buffer
+			uint8_t result = parse_command();
+			//uint8_t result = 25;
+			buf->data[buf->len - 1] = result;
+			printk("Sending Data: %d\n", result);
+			// Configure message for sending
+			net_buf_simple_add_mem(&rsp_buf, buf->data, buf->len);
 		#else
 			net_buf_simple_add_mem(&rsp_buf, buf->data, buf->len);
 		#endif

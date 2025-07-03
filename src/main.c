@@ -9,12 +9,7 @@
 #endif
 #ifdef CONFIG_MILLIMOBILE_CMD
 #include "cmdParser.h"
-typedef enum{
-	CMD_TEMP,
-	CMD_STANDBY,
-	CMD_CAPACITOR,
-} cmd_mode_t;
-cmd_mode_t command = 0; // Default to temp sensor mode
+uint8_t command = 0; // Default to temp sensor mode
 #endif
 
 #include <zephyr/kernel.h>
@@ -75,7 +70,7 @@ int main(void){
 	}     
        
         LOG_INF("Start adc simulation");
-        start_adc_simulation();
+        //start_adc_simulation();
         
         LOG_INF("Entering main loop, current power mode: %d", current_power_mode);
         while(1){

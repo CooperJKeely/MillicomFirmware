@@ -39,7 +39,10 @@ BUILD_ASSERT(ARRAY_SIZE(bufs) == ARRAY_SIZE(subevent_data_params));
 BUILD_ASSERT(ARRAY_SIZE(backing_store) == ARRAY_SIZE(subevent_data_params));
 
 static uint8_t counter;
-static uint8_t command = 0;
+#if defined(CONFIG_MILLIMOBILE_CMD)
+// command variable from main
+extern uint8_t command;
+#endif
 
 static void request_cb(struct bt_le_ext_adv *adv, const struct bt_le_per_adv_data_request *request){
 	int err;
@@ -86,7 +89,11 @@ static struct bt_conn *default_conn;
 static void response_cb(struct bt_le_ext_adv *adv, struct bt_le_per_adv_response_info *info,
 		     struct net_buf_simple *buf){
 	if (buf) {
-		printk("Response: subevent %d, slot %d", info->subevent, info->response_slot);
+		printk("Response: subevent %d, slot %d\n", info->subevent, info->response_slot);
+		// Begin Debug
+		uint8_t result = buf->data[buf->len - 1];
+		printk("Received data: %d", result);
+		// End Debug
 		bt_data_parse(buf, print_ad_field, NULL);
 	}
 }

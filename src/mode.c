@@ -1,4 +1,5 @@
 #include "mode.h"
+#include <stdlib.h>
 
 volatile power_mode_t current_power_mode = POWER_LOW_MODE_NONE; 
 struct k_poll_signal mode_switch_signal;
