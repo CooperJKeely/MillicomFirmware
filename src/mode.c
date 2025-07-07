@@ -13,7 +13,7 @@ static int32_t read_cap_voltage(void){
     return (int32_t)((rand() % 4000)); // Simulated ADC value between 1000 and 4000
 }
 
-void adc_timer_handler(struct k_timer *timer_id){
+void read_voltage_handler(struct k_timer *timer_id){
     // This function is called periodically to simulate ADC readings
     // In a real application, you would read from an ADC here
     // For this example, we will just print a message
@@ -38,7 +38,7 @@ void start_adc_simulation(void){
     // This function starts the ADC simulation
     // In a real application, you would configure the ADC here
     // For this example, we will just start a timer to simulate ADC readings
-    k_timer_init(&adc_timer, adc_timer_handler, NULL);
+    k_timer_init(&adc_timer, read_voltage_handler, NULL);
     k_timer_start(&adc_timer, K_NO_WAIT, K_SECONDS(20));
 }
 
