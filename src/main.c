@@ -80,13 +80,13 @@ static const struct adc_dt_spec adc_channels[] = {
 			     DT_SPEC_AND_COMMA)
 };
 uint32_t count = 0;
-	uint16_t buf;
-	struct adc_sequence sequence = {
-		.buffer = &buf,
-		/* buffer size in bytes, not number of samples */
-		.buffer_size = sizeof(buf),
-                .resolution = 10,
-	};
+uint16_t buf;
+struct adc_sequence sequence = {
+        .buffer = &buf,
+        /* buffer size in bytes, not number of samples */
+        .buffer_size = sizeof(buf),
+        .resolution = 10,
+};
 
 // ADC MV Buffer
 int32_t adc_outputs_mv[ARRAY_SIZE(adc_channels)];
@@ -269,8 +269,8 @@ int main(void){
 	}     
        
         LOG_INF("Start adc simulation");
-        start_adc_simulation();
-        
+        //start_adc_simulation();
+        current_power_mode = POWER_MED_MODE_SYNC; 
         LOG_INF("Entering main loop, current power mode: %d", current_power_mode);
         while(1){
                 if(current_power_mode == POWER_LOW_MODE_NONE){
