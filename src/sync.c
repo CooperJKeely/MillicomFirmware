@@ -262,6 +262,8 @@ void sync_thread(void)
 	struct bt_le_per_adv_sync_transfer_param past_param;
 	int err;
 
+	//k_poll_signal_reset(sync_events[2].signal);
+
 
 	LOG_INF("Starting Periodic Advertising with Responses Synchronization Demo");
 
