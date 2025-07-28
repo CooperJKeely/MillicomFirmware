@@ -1,0 +1,7 @@
+&i2c0 {
+    hdc3022: hdc3022r@44{
+    compatible = "i2c-device";
+    reg = < 0x44 >;
+    label = "temp_sensor";
+    };
+};
