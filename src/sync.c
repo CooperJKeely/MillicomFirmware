@@ -262,7 +262,7 @@ void sync_thread(void)
 	struct bt_le_per_adv_sync_transfer_param past_param;
 	int err;
 
-	//k_poll_signal_reset(sync_events[2].signal);
+	k_poll_signal_reset(sync_events[2].signal);
 
 
 	LOG_INF("Starting Periodic Advertising with Responses Synchronization Demo");
@@ -280,7 +280,13 @@ void sync_thread(void)
 
 	while(1){
 		uint8_t timeout_counter = 0;
-		err = bt_le_adv_start(BT_LE_ADV_CONN_FAST_1, ad, ARRAY_SIZE(ad), NULL, 0);
+		err = bt_le_adv_start(
+			BT_LE_ADV_PARAM(
+					BT_LE_ADV_OPT_CONN,
+					0x00C8, 
+					0x00F0, 
+					NULL), 
+			ad, ARRAY_SIZE(ad), NULL, 0);
 		if (err && err != -EALREADY) {
 			LOG_ERR("Advertising failed to start (err %d)", err);
 			return ;

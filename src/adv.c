@@ -21,14 +21,32 @@ static struct bt_uuid_128 pawr_char_uuid =
 	BT_UUID_INIT_128(BT_UUID_128_ENCODE(0x12345678, 0x1234, 0x5678, 0x1234, 0x56789abcdef1));
 static uint16_t pawr_attr_handle;
 static const struct bt_le_per_adv_param per_adv_params = {
-	.interval_min = 0xFF,
-	.interval_max = 0xFF,
+	.interval_min = 0x320,
+	.interval_max = 0x320,
 	.options = 0,
 	.num_subevents = NUM_SUBEVENTS,
-	.subevent_interval = 0x50,
+	.subevent_interval = 0x10,
 	.response_slot_delay = 0x5,
-	.response_slot_spacing = 0x50,
+	.response_slot_spacing = 0x5,
 	.num_response_slots = NUM_RSP_SLOTS,
+};
+
+
+// This struct defines the parameters for a low-power, passive scan.
+static struct bt_le_scan_param low_power_passive_scan_params = {
+    // The scanner will only listen for advertisements
+    .type       = BT_LE_SCAN_TYPE_PASSIVE,
+
+    // This option filters out duplicate
+    // advertising packets. The 'device_found' callback will only be called
+    // once for each unique device discovered.
+    .options    = BT_LE_SCAN_OPT_FILTER_DUPLICATE,
+
+    // This sets the scan interval to 1.28 seconds.
+    .interval   = BT_GAP_SCAN_SLOW_INTERVAL_1,
+
+    // This sets the scan window to 11.25 ms.
+    .window     = BT_GAP_SCAN_SLOW_WINDOW_1,
 };
 
 static struct bt_le_per_adv_subevent_data_params subevent_data_params[NUM_SUBEVENTS];
@@ -271,7 +289,7 @@ void adv_thread(void){
 	while (num_synced < MAX_SYNCS) {
 
 		/* Enable continuous scanning */
-		err = bt_le_scan_start(BT_LE_SCAN_PASSIVE_CONTINUOUS, device_found);
+		err = bt_le_scan_start(&low_power_passive_scan_params, device_found);
 		if (err) {
 			LOG_WRN("Scanning failed to start (err %d)", err);
 			return ;
