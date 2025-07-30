@@ -95,16 +95,18 @@ void adc_timer_handler(struct k_work *dummy){
     // This function is called periodically to simulate ADC readings
     // In a real application, you would read from an ADC here
     // For this example, we will just print a message
-    printk("ADC Timer Handler: Simulating ADC reading\n");
     readADC(); // Simulated ADC value
     int32_t adc_value = adc_outputs_mv[SUPER_CAP_IDX]; 
-    power_mode_t mode;
+    power_mode_t mode = current_power_mode;
     if(adc_value < 1000){
         mode = POWER_LOW_MODE_NONE;
     } else if(adc_value < 2000){
         mode = POWER_MED_MODE_SYNC;
-    } else{
-        mode = POWER_HIGH_MODE_SYNC;
+    } else{ 
+        if(current_power_mode != POWER_HIGH_MODE_ADV){
+                mode = POWER_HIGH_MODE_SYNC;
+        }
+
     }
     if(mode != current_power_mode){
         current_power_mode = mode;

@@ -252,6 +252,7 @@ static const struct bt_data ad[] = {
 void sync_thread(void)
 {
 	struct bt_le_per_adv_sync_transfer_param past_param;
+	struct bt_le_ext_adv *adv;
 	int err;
 
 
@@ -265,15 +266,32 @@ void sync_thread(void)
 	err = bt_le_per_adv_sync_transfer_subscribe(NULL, &past_param);
 	if (err) {
 		LOG_ERR("PAST subscribe failed (err %d)", err);
-		return ;
+		return;
+	}
+
+	/* Create a connectable advertising set */
+	err = bt_le_ext_adv_create(BT_LE_EXT_ADV_CONN, NULL, &adv);
+	if (err) {
+		LOG_ERR("Failed to create advertising set (err %d)", err);
+		return;
+	}
+
+	/* Set advertising data */
+	err = bt_le_ext_adv_set_data(adv, ad, ARRAY_SIZE(ad), NULL, 0);
+	if (err) {
+		LOG_ERR("Failed to set advertising data (err %d)", err);
+		bt_le_ext_adv_delete(adv);
+		return;
 	}
 
 	while(1){
 		uint8_t timeout_counter = 0;
-		err = bt_le_adv_start(BT_LE_ADV_CONN_FAST_1, ad, ARRAY_SIZE(ad), NULL, 0);
+		
+		err = bt_le_ext_adv_start(adv, BT_LE_EXT_ADV_START_DEFAULT);
 		if (err && err != -EALREADY) {
 			LOG_ERR("Advertising failed to start (err %d)", err);
-			return ;
+			bt_le_ext_adv_delete(adv);
+			return;
 		}
 
 		LOG_INF("Waiting for periodic sync...");
@@ -300,38 +318,55 @@ void sync_thread(void)
 				continue;
 			} else {
 				LOG_ERR("Polling failed (err %d)", err);
-				return ;
+				bt_le_ext_adv_delete(adv);
+				return;
 			}
 		}
 		continue;
 sync_established:
 		LOG_INF("Periodic sync established, waiting for data...");
-		err = k_poll(&sync_events[1], 2, K_FOREVER);
-		if (err == 0){
-			if (sync_events[1].sem->count > 0){
-				k_sem_take(&sem_per_sync_lost, K_NO_WAIT);
-				LOG_INF("Periodic sync lost, re-establishing.");
-				continue;
-			} else if (sync_events[2].signal->signaled) {
-				k_poll_signal_reset(&mode_switch_signal);
-				LOG_INF("Power mode change requested, exiting sync thread.");
-				goto mode_switch;
+		while(1) {
+			err = k_poll(&sync_events[1], 2, K_FOREVER);
+			if (err == 0){
+				if (sync_events[1].sem->count > 0){
+					k_sem_take(&sem_per_sync_lost, K_NO_WAIT);
+					LOG_INF("Periodic sync lost, re-establishing.");
+					break; // Break out to re-establish sync
+				} else if (sync_events[2].signal->signaled) {
+					k_poll_signal_reset(&mode_switch_signal);
+					LOG_INF("Power mode change requested, exiting sync thread.");
+					goto mode_switch;
+				}
+			} else {
+				LOG_ERR("Polling failed in sync_established (err %d)", err);
+				break;
 			}
 		}
 	
 	}
 mode_switch:
+	LOG_INF("Cleaning up sync thread resources");
+	
+	// Stop and delete advertising set
+	bt_le_ext_adv_stop(adv);
+	bt_le_ext_adv_delete(adv);
+	
+	// Clean up sync
 	if (default_sync) {
 		bt_le_per_adv_sync_delete(default_sync);
 		default_sync = NULL;
 	}
+	
+	// Clean up connection
 	if (default_conn) {
-		bt_le_per_adv_sync_transfer_unsubscribe(default_conn);
 		bt_conn_disconnect(default_conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
 		bt_conn_unref(default_conn);
 		default_conn = NULL;
 	}
-	bt_le_adv_stop();
+
+	// Unsubscribe from PAST
+	(void)bt_le_per_adv_sync_transfer_unsubscribe(NULL);
+	
 	LOG_INF("Exiting sync thread due to power mode change.");
-	return ;
+	return;
 }

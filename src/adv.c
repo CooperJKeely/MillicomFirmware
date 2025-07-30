@@ -39,10 +39,7 @@ BUILD_ASSERT(ARRAY_SIZE(bufs) == ARRAY_SIZE(subevent_data_params));
 BUILD_ASSERT(ARRAY_SIZE(backing_store) == ARRAY_SIZE(subevent_data_params));
 
 static uint8_t counter;
-#if defined(CONFIG_MILLIMOBILE_CMD)
-// command variable from main
-extern uint8_t command;
-#endif
+static uint8_t num_synced;
 
 static void request_cb(struct bt_le_ext_adv *adv, const struct bt_le_per_adv_data_request *request){
 	int err;
@@ -55,7 +52,7 @@ static void request_cb(struct bt_le_ext_adv *adv, const struct bt_le_per_adv_dat
 		buf = &bufs[i];
 		/* Data being sent to the sync device, and then sent back*/
 		// Original: buf->data[buf->len - 1] = counter++;
-		buf->data[buf->len - 1] = command;
+		buf->data[buf->len - 1] = 0;
 
 		subevent_data_params[i].subevent =
 			(request->start + i) % per_adv_params.num_subevents;
@@ -116,6 +113,14 @@ void connected_cb(struct bt_conn *conn, uint8_t err){
 
 void disconnected_cb(struct bt_conn *conn, uint8_t reason){
 	printk("Disconnected, reason 0x%02X %s\n", reason, bt_hci_err_to_str(reason));
+	
+	// If this was one of our synced devices, decrement the counter
+	if (conn == default_conn) {
+		if (num_synced > 0) {
+			num_synced--;
+		}
+	}
+	
 	k_sem_give(&sem_disconnected);
 }
 
@@ -224,7 +229,6 @@ void init_bufs(void){
 					      ARRAY_SIZE(backing_store[i]));
 	}
 }
-static uint8_t num_synced;
 
 void adv_thread(void){
 	int err;
@@ -268,127 +272,147 @@ void adv_thread(void){
 		return ;
 	}
 
-	while (num_synced < MAX_SYNCS) {
+	// Single main loop that handles all states
+	while (true) {
+		// Check if we need to scan for more devices
+		if (num_synced < MAX_SYNCS) {
+			LOG_INF("Scanning for devices (%d/%d synced)", num_synced, MAX_SYNCS);
+			
+			/* Enable continuous scanning */
+			err = bt_le_scan_start(BT_LE_SCAN_PASSIVE_CONTINUOUS, device_found);
+			if (err) {
+				LOG_WRN("Scanning failed to start (err %d)", err);
+				break;
+			}
 
-		/* Enable continuous scanning */
-		err = bt_le_scan_start(BT_LE_SCAN_PASSIVE_CONTINUOUS, device_found);
-		if (err) {
-			LOG_WRN("Scanning failed to start (err %d)", err);
-			return ;
+			LOG_INF("Scanning successfully started");
+
+			/* Wait for connection, disconnection, or mode change */
+			err = k_poll(events, ARRAY_SIZE(events), K_FOREVER);
+			if (err == 0 && events[2].signal->signaled){
+				k_poll_signal_reset(events[2].signal);
+				LOG_INF("Power mode change requested, exiting adv thread");
+				break;
+			}
+
+			// Check for disconnection during scanning
+			if (err == 0 && events[1].sem->count > 0) {
+				k_sem_take(&sem_disconnected, K_NO_WAIT);
+				LOG_INF("Device disconnected during scanning");
+				continue; // Go back to check if we need to keep scanning
+			}
+
+			err = k_sem_take(&sem_connected, K_NO_WAIT);
+			if (err) {
+				LOG_WRN("Disconnected before remote info available");
+				continue; // Try scanning again
+			}
+			
+			// We have a connection, proceed with sync setup
+			err = bt_le_per_adv_set_info_transfer(pawr_adv, default_conn, 0);
+			if (err) {
+				LOG_WRN("Failed to send PAST (err %d)", err);
+				goto cleanup_and_continue;
+			}
+
+			LOG_INF("PAST sent");
+
+			discover_params.uuid = &pawr_char_uuid.uuid;
+			discover_params.func = discover_func;
+			discover_params.start_handle = BT_ATT_FIRST_ATTRIBUTE_HANDLE;
+			discover_params.end_handle = BT_ATT_LAST_ATTRIBUTE_HANDLE;
+			discover_params.type = BT_GATT_DISCOVER_CHARACTERISTIC;
+			err = bt_gatt_discover(default_conn, &discover_params);
+			if (err) {
+				LOG_WRN("Discovery failed (err %d)", err);
+				goto cleanup_and_continue;
+			}
+
+			LOG_INF("Discovery started");
+
+			err = k_sem_take(&sem_discovered, K_SECONDS(10));
+			if (err) {
+				LOG_WRN("Timed out during GATT discovery");
+				goto cleanup_and_continue;
+			}
+
+			sync_config.subevent = num_synced % NUM_SUBEVENTS;
+			sync_config.response_slot = num_synced / NUM_SUBEVENTS;
+
+			write_params.func = write_func;
+			write_params.handle = pawr_attr_handle;
+			write_params.offset = 0;
+			write_params.data = &sync_config;
+			write_params.length = sizeof(sync_config);
+
+			err = bt_gatt_write(default_conn, &write_params);
+			if (err) {
+				LOG_WRN("Write failed (err %d)", err);
+				goto cleanup_and_continue;
+			}
+
+			LOG_INF("Write started");
+
+			err = k_sem_take(&sem_written, K_SECONDS(10));
+			if (err) {
+				LOG_WRN("Timed out during GATT write");
+				goto cleanup_and_continue;
+			}
+
+			// Successfully completed sync setup
+			num_synced++;
+			LOG_INF("PAwR config written to sync %d, disconnecting", num_synced - 1);
+
+cleanup_and_continue:
+			// Clean disconnect and cleanup
+			if (default_conn) {
+				/* Adding delay to ensure sync is established before disconnection */
+				k_sleep(K_MSEC(per_adv_params.interval_max * 2));
+
+				err = bt_conn_disconnect(default_conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
+				if (err == 0 || err == -ENOTCONN) {
+					// Wait for disconnection confirmation if disconnect succeeded
+					k_sem_take(&sem_disconnected, K_MSEC(5000));
+				}
+				
+				bt_conn_unref(default_conn);
+				default_conn = NULL;
+			}
+			// Continue to next iteration of main loop
+
+		} else {
+			// We have max connections, just wait for disconnections or mode changes
+			LOG_INF("Max syncs reached (%d/%d), waiting for disconnection or mode change", 
+					num_synced, MAX_SYNCS);
+			
+			err = k_poll(events, ARRAY_SIZE(events), K_FOREVER);
+			if (err == 0 && events[2].signal->signaled) {
+				k_poll_signal_reset(events[2].signal);
+				LOG_INF("Power mode change requested, exiting adv thread");
+				break;
+			}
+			
+			// Check for disconnection
+			if (err == 0 && events[1].sem->count > 0) {
+				k_sem_take(&sem_disconnected, K_NO_WAIT);
+				LOG_INF("Device disconnected, will resume scanning if needed");
+				// Loop will continue and check num_synced < MAX_SYNCS
+			}
 		}
+	}
 
-		LOG_INF("Scanning successfully started");
-
-		/* Wait for either remote info available or involuntary disconnect */
-		err = k_poll(events, ARRAY_SIZE(events), K_FOREVER);
-		if (err == 0 && events[2].signal->signaled){
-			k_poll_signal_reset(events[2].signal);
-			goto mode_switch;
-		}	
-
-		err = k_sem_take(&sem_connected, K_NO_WAIT);
-		if (err) {
-			LOG_WRN("Disconnected before remote info available");
-			goto disconnected;
-		}
-		
-		err = bt_le_per_adv_set_info_transfer(pawr_adv, default_conn, 0);
-		if (err) {
-			LOG_WRN("Failed to send PAST (err %d)", err);
-			goto disconnect;
-		}
-
-		LOG_INF("PAST sent");
-
-		discover_params.uuid = &pawr_char_uuid.uuid;
-		discover_params.func = discover_func;
-		discover_params.start_handle = BT_ATT_FIRST_ATTRIBUTE_HANDLE;
-		discover_params.end_handle = BT_ATT_LAST_ATTRIBUTE_HANDLE;
-		discover_params.type = BT_GATT_DISCOVER_CHARACTERISTIC;
-		err = bt_gatt_discover(default_conn, &discover_params);
-		if (err) {
-			LOG_WRN("Discovery failed (err %d)", err);
-			goto disconnect;
-		}
-
-		LOG_INF("Discovery started");
-
-		err = k_sem_take(&sem_discovered, K_SECONDS(10));
-		if (err) {
-			LOG_WRN("Timed out during GATT discovery");
-			goto disconnect;
-		}
-
-		sync_config.subevent = num_synced % NUM_SUBEVENTS;
-		sync_config.response_slot = num_synced / NUM_SUBEVENTS;
-		num_synced++;
-
-		write_params.func = write_func;
-		write_params.handle = pawr_attr_handle;
-		write_params.offset = 0;
-		write_params.data = &sync_config;
-		write_params.length = sizeof(sync_config);
-
-		err = bt_gatt_write(default_conn, &write_params);
-		if (err) {
-			LOG_WRN("Write failed (err %d)", err);
-			num_synced--;
-			goto disconnect;
-		}
-
-		LOG_INF("Write started");
-
-		err = k_sem_take(&sem_written, K_SECONDS(10));
-		if (err) {
-			LOG_WRN("Timed out during GATT write");
-			num_synced--;
-			goto disconnect;
-		}
-
-		LOG_WRN("PAwR config written to sync %d, disconnecting", num_synced - 1);
-
-disconnect:
-		/* Adding delay (2ms * interval value, using 2ms intead of the 1.25ms
-		 * used by controller) to ensure sync is established before
-		 * disconnection.
-		 */
-		k_sleep(K_MSEC(per_adv_params.interval_max * 2));
-
-		err = bt_conn_disconnect(default_conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
-		if (err != 0 && err != -ENOTCONN) {
-			return ;
-		}
-
-disconnected:
-		k_sem_take(&sem_disconnected, K_FOREVER);
-
+	// Cleanup when exiting
+	LOG_INF("Cleaning up adv thread");
+	bt_le_ext_adv_stop(pawr_adv);
+	bt_le_per_adv_stop(pawr_adv);
+	bt_le_ext_adv_delete(pawr_adv);
+	bt_le_scan_stop();
+	if (default_conn) {
+		bt_conn_disconnect(default_conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
 		bt_conn_unref(default_conn);
 		default_conn = NULL;
-
 	}
-
-	LOG_INF("Maximum number of syncs onboarded");
-
-	while (true) {
-		err = k_poll(&events[2], 1, K_FOREVER);
-		if (err == 0 && events[2].signal->signaled) {
-			k_poll_signal_reset(events[2].signal);
-			goto mode_switch;
-		}
-	}
-
-mode_switch:
-		LOG_INF("Power mode is low, exiting");
-		bt_le_ext_adv_stop(pawr_adv);
-		bt_le_per_adv_stop(pawr_adv);
-		bt_le_ext_adv_delete(pawr_adv);
-		bt_le_scan_stop();
-		if (default_conn) {
-			bt_conn_disconnect(default_conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
-			bt_conn_unref(default_conn);
-			default_conn = NULL;
-		}
-		return ;
+	return;
 
 }
 

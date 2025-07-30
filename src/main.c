@@ -159,15 +159,15 @@ int main(void){
 		return -1;
 	}     
        
-        current_power_mode = POWER_MED_MODE_SYNC; 
+        current_power_mode = POWER_LOW_MODE_NONE; 
         LOG_INF("Entering main loop, current power mode: %d", current_power_mode);
         while(1){
                 if(current_power_mode == POWER_LOW_MODE_NONE){
                         LOG_INF("Power mode is low, continue");
-                }else if (current_power_mode == POWER_MED_MODE_SYNC || current_power_mode == POWER_HIGH_MODE_SYNC){
+                } else if (current_power_mode == POWER_MED_MODE_SYNC || current_power_mode == POWER_HIGH_MODE_SYNC){
                         LOG_INF("Power mode is medium, starting sync thread");
                         sync_thread();
-                }else if (current_power_mode == POWER_HIGH_MODE_ADV){
+                } else if (current_power_mode == POWER_HIGH_MODE_ADV){
                         LOG_INF("Power mode is high, starting adv thread");
                         adv_thread();
                 }
