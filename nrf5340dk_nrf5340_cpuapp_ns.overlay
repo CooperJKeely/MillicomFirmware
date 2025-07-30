@@ -1,7 +1,15 @@
 &i2c0 {
+
+    clock-frequency = <I2C_BITRATE_STANDARD>; // 100 kHz
+    status = "okay";
+    pinctrl-0 = <&i2c0_default>;
+	pinctrl-1 = <&i2c0_sleep>;
+    pinctrl-names = "default", "sleep";
+
     hdc3022: hdc3022r@44{
-    compatible = "i2c-device";
-    reg = < 0x44 >;
-    label = "temp_sensor";
+        compatible = "i2c-device";
+        reg = < 0x44 >;
+        label = "temp_sensor";
     };
+
 };
