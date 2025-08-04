@@ -55,7 +55,7 @@ int main(void){
                 return -1;                
         }
 
-        ret = gpio_pin_interrupt_configure_dt(&button, GPIO_INT_EDGE_TO_ACTIVE);
+        ret = gpio_pin_interrupt_configure_dt(&button, GPIO_INT_LEVEL_ACTIVE);
 
         gpio_init_callback(&button_cb_data, button_pressed, BIT(button.pin));
 
