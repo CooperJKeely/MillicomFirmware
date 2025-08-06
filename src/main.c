@@ -11,10 +11,10 @@
 #include "cmdParser.h"
 uint8_t command = 0; // Default to temp sensor mode
 #endif
+#include "sensor.h"
 
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
-#include <zephyr/devicetree.h>
 #include <zephyr/drivers/gpio.h>
 
 #include <zephyr/logging/log.h>

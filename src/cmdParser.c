@@ -10,7 +10,7 @@ uint8_t parse_command(void){
     //LOG_ERR("Beginning Comand Parsing");
     switch(command) {
         case 0:
-            // Temperature
+            //On-board Temperature
             return get_temperature();
         case 1:
             // Standby
@@ -18,6 +18,9 @@ uint8_t parse_command(void){
         case 2:
             // Capacitor
             return 0;   // Placeholder value
+        case 3:
+            //I2C Temperature
+            return i2c_get_temperature();
         default:
             // Default case - should never reach
             return 0;   // Placeholder value
