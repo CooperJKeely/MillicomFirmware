@@ -4,10 +4,10 @@
 #include <zephyr/drivers/i2c.h>
 #include <zephyr/sys/printk.h>
 
-#define I2C0_NODE DT_NODELABEL(hdc3022)
+#define I2C1_NODE DT_NODELABEL(hdc3022)
 #define I2C_SPEED_STANDARD (0x1U)
 
-static const struct i2c_dt_spec dev_i2c = I2C_DT_SPEC_GET(I2C_NODE);
+static const struct i2c_dt_spec dev_i2c = I2C_DT_SPEC_GET(I2C1_NODE);
 
 uint8_t device_status(void){
 
@@ -24,9 +24,9 @@ int8_t i2c_get_temperature(void){
     if(device_status()){
         return 0;
     }
-    ret = i2c_read_dt(&dev_i2c, &data, sizeof(data));
+    uint8_t ret = i2c_read_dt(&dev_i2c, &data, sizeof(data));
     if(ret != 0){
-        printk("Failed to read from I2C device address %x at Reg. %x \n\r", dev_i2c.addr,config[0]);
+        printk("Failed to read from I2C device address %x\n\r", dev_i2c.addr);
         return 1;
     }
     printk("Temperature: %d \n", data);
