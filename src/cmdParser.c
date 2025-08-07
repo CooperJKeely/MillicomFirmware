@@ -1,4 +1,5 @@
 #include "cmdParser.h"
+#include "sensor.c"
 #include <zephyr/bluetooth/hci_vs.h>
 
 #if defined(CONFIG_MILLIMOBILE_CMD)
