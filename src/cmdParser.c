@@ -1,12 +1,6 @@
 #include "cmdParser.h"
-#include <zephyr/bluetooth/hci_vs.h>
 
-#if defined(CONFIG_MILLIMOBILE_CMD)
-// command variable from main
-extern uint8_t command;
-#endif
-
-uint8_t parse_command(void){
+uint8_t parse_command(uint8_t command){
     //LOG_ERR("Beginning Comand Parsing");
     switch(command) {
         case 0:

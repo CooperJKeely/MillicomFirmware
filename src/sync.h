@@ -7,6 +7,7 @@
 #include <zephyr/bluetooth/hci.h>
 #include <zephyr/sys/util.h>
 #include "mode.h"
+#include "cmdParser.h"
 
 #define NAME_LEN 30
 #define timeout_threshold 3
