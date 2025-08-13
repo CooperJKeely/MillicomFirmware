@@ -20,4 +20,21 @@ config MILLIMOBILE_CMD
 	depends on MILLIMOBILE_MODE_SWITCHING
 	default n
 
+config MILLIMOBILE_DEV_KIT
+	bool "Enable devkit options"
+	select LOG
+	select LOG_BACKEND_SHOW_COLOR
+	select LOG_PRINTK
+	select UART_CONSOLE
+	select LOG_BACKEND_UART 
+	default n
+
+config MILLIMOBILE_BOT
+	bool "Enable bot options"
+	depends on !MILLIMOBILE_DEV_KIT
+	select ADC
+	select GPIO
+	default n  
+
+
 endmenu

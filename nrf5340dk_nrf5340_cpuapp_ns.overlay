@@ -59,6 +59,7 @@
         zephyr,resolution = < 12 >;
 	};
 };
+
 /* UART 
 &uart0 {
     status = "disabled";
