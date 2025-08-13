@@ -1,4 +1,5 @@
 #include "sync.h"
+#include "cmdParser.c"
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(Sync,LOG_LEVEL_DBG);
@@ -22,6 +23,13 @@ static struct __packed {
 	uint8_t subevent;
 	uint8_t response_slot;
 } pawr_timing;
+
+#if defined(CONFIG_MILLIMOBILE_CMD)
+// command variable from main
+extern uint8_t command;
+#endif
+
+
 
 
 static void sync_cb(struct bt_le_per_adv_sync *sync, struct bt_le_per_adv_sync_synced_info *info)
@@ -118,7 +126,7 @@ static void recv_cb(struct bt_le_per_adv_sync *sync,
 		#if defined(CONFIG_MILLIMOBILE_CMD)
 			// Copy buffer data (command) into relevant variable
 			// Parse command & store result in buffer
-			uint8_t result = parse_command(0);
+			uint8_t result = parse_command();
 			//uint8_t result = 25;
 			buf->data[buf->len - 1] = result;
 			printk("Sending Data: %d\n", result);
