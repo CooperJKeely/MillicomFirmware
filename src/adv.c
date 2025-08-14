@@ -3,6 +3,8 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(Advertizer,LOG_LEVEL_DBG);
 
+static bool is_shutting_down = false;
+
 static K_SEM_DEFINE(sem_connected, 0, 1);
 static K_SEM_DEFINE(sem_discovered, 0, 1);
 static K_SEM_DEFINE(sem_written, 0, 1);
@@ -104,6 +106,11 @@ static const struct bt_le_ext_adv_cb adv_cb = {
 };
 
 void connected_cb(struct bt_conn *conn, uint8_t err){
+	if (is_shutting_down) {
+		LOG_WRN("Connection callback ignored: adv_thread is shutting down.");
+		return;
+	}
+
 	printk("Connected (err 0x%02X)\n", err);
 
 	__ASSERT(conn == default_conn, "Unexpected connected callback");
@@ -124,7 +131,15 @@ void remote_info_available_cb(struct bt_conn *conn, struct bt_conn_remote_info *
 	k_sem_give(&sem_connected);
 }
 
+/*
 BT_CONN_CB_DEFINE(conn_cb) = {
+	.connected = connected_cb,
+	.disconnected = disconnected_cb,
+	.remote_info_available = remote_info_available_cb,
+};
+*/
+
+static struct bt_conn_cb adv_conn_cb = {
 	.connected = connected_cb,
 	.disconnected = disconnected_cb,
 	.remote_info_available = remote_info_available_cb,
@@ -233,11 +248,16 @@ void adv_thread(void){
 	struct bt_gatt_write_params write_params;
 	struct pawr_timing sync_config;
 
+	is_shutting_down = false;
+
+	// Register the callbacks
+	bt_conn_cb_register(&adv_conn_cb);
+
 	init_bufs();
 	num_synced = 0;
 	k_poll_signal_reset(events[2].signal);
 
-	LOG_INF("Starting Periodic Advertising Demo");
+	LOG_INF("'adv_thread' has started");
 
 	/* Create a non-connectable advertising set */
 	err = bt_le_ext_adv_create(BT_LE_EXT_ADV_NCONN, &adv_cb, &pawr_adv);
@@ -378,6 +398,8 @@ disconnected:
 	}
 
 mode_switch:
+		is_shutting_down = true;
+
 		LOG_INF("Power mode is low, exiting");
 		bt_le_ext_adv_stop(pawr_adv);
 		bt_le_per_adv_stop(pawr_adv);
@@ -388,7 +410,9 @@ mode_switch:
 			bt_conn_unref(default_conn);
 			default_conn = NULL;
 		}
-		return ;
 
+		// Unregister callbacks
+		bt_conn_cb_unregister(&adv_conn_cb);
+		return ;
 }
 

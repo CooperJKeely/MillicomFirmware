@@ -3,9 +3,13 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(Sync,LOG_LEVEL_DBG);
 
+static bool is_legacy_advertising = false; 
+static bool is_shutting_down = false;
+
 static K_SEM_DEFINE(sem_per_adv, 0, 1);
 static K_SEM_DEFINE(sem_per_sync, 0, 1);
 static K_SEM_DEFINE(sem_per_sync_lost, 0, 1);
+static K_SEM_DEFINE(sem_handshake_done, 0, 1); 
 
 static struct k_poll_event sync_events[] = {
 	K_POLL_EVENT_STATIC_INITIALIZER(K_POLL_TYPE_SEM_AVAILABLE, K_POLL_MODE_NOTIFY_ONLY,
@@ -14,6 +18,8 @@ static struct k_poll_event sync_events[] = {
 					&sem_per_sync_lost, 0),
 	K_POLL_EVENT_STATIC_INITIALIZER(K_POLL_TYPE_SIGNAL, K_POLL_MODE_NOTIFY_ONLY,
 					&mode_switch_signal, 0),
+	K_POLL_EVENT_STATIC_INITIALIZER(K_POLL_TYPE_SEM_AVAILABLE, K_POLL_MODE_NOTIFY_ONLY,
+					&sem_handshake_done, 0),
 };
 
 static struct bt_conn *default_conn;
@@ -221,6 +227,13 @@ BT_GATT_SERVICE_DEFINE(pawr_svc, BT_GATT_PRIMARY_SERVICE(&pawr_svc_uuid.uuid),
 
 void connected(struct bt_conn *conn, uint8_t err)
 {
+	if (is_shutting_down) {
+		LOG_WRN("Connection callback ignored: thread is shutting down.");
+		return;
+	}
+
+	LOG_INF("--> Log: `connected` callback entered."); 
+
 	printk("Connected, err 0x%02X %s\n", err, bt_hci_err_to_str(err));
 
 	if (err) {
@@ -229,18 +242,40 @@ void connected(struct bt_conn *conn, uint8_t err)
 		return;
 	}
 
+	is_legacy_advertising = false;
+
+
 	default_conn = bt_conn_ref(conn);
+
+    k_sem_give(&sem_handshake_done);
 }
 
 void disconnected(struct bt_conn *conn, uint8_t reason)
 {
-	bt_conn_unref(default_conn);
-	default_conn = NULL;
+	LOG_INF("--> Log: `disconnected` callback entered."); 
+
+	if(is_shutting_down) {
+        LOG_WRN("Disconnected callback ignored: thread is shutting down.");
+		return;
+	}
+
+	if (default_conn == conn) {
+		k_sem_give(&sem_handshake_done); 
+		bt_conn_unref(default_conn);
+		default_conn = NULL;
+	}
 
 	printk("Disconnected, reason 0x%02X %s\n", reason, bt_hci_err_to_str(reason));
 }
 
+/*
 BT_CONN_CB_DEFINE(conn_cb) = {
+	.connected = connected,
+	.disconnected = disconnected,
+};
+*/
+
+static struct bt_conn_cb sync_conn_cb = {
 	.connected = connected,
 	.disconnected = disconnected,
 };
@@ -254,8 +289,12 @@ void sync_thread(void)
 	struct bt_le_per_adv_sync_transfer_param past_param;
 	int err;
 
+	// Register bt connection callbacks
+    bt_conn_cb_register(&sync_conn_cb);
 
-	LOG_INF("Starting Periodic Advertising with Responses Synchronization Demo");
+	is_shutting_down = false;
+
+	LOG_INF("`sync_thread` has started."); 
 
 	bt_le_per_adv_sync_cb_register(&sync_callbacks);
 
@@ -275,6 +314,9 @@ void sync_thread(void)
 			LOG_ERR("Advertising failed to start (err %d)", err);
 			return ;
 		}
+		if (err == 0) { 
+       		is_legacy_advertising = true; 
+   		}	
 
 		LOG_INF("Waiting for periodic sync...");
 		while(1){
@@ -284,6 +326,23 @@ void sync_thread(void)
 					k_sem_take(&sem_per_sync, K_NO_WAIT);	
 					LOG_INF("Periodic sync established, receiving data.");
 					goto sync_established;
+				} else if (sync_events[3].sem->count > 0) { // BLE Handshake Started
+					k_sem_take(&sem_handshake_done, K_NO_WAIT);
+					LOG_INF("Temporary BLE connection established. Waiting for disconnect after PAST.");
+
+					// Wait for the disconnect signal (sem_handshake_done again) or a power mode change.
+					err = k_poll(&sync_events[2], 2, K_SECONDS(10)); // Listen starting at mode_switch_signal for 2 events
+
+					if (err == -EAGAIN) {
+						// The advertiser failed to disconnect us.
+						LOG_WRN("Timed out waiting for post-PAST disconnect. Forcing cleanup.");
+						goto mode_switch;
+					}
+					
+					// Disconnect happened normally OR mode changed.
+					k_sem_take(&sem_handshake_done, K_NO_WAIT); // Clear the semaphore if it was given
+					LOG_INF("Post-PAST disconnect received or mode changed. Restarting scan.");
+					continue; // Loop back to the main "waiting for sync" state.
 				} else if(sync_events[2].signal->signaled){
 					k_poll_signal_reset(&mode_switch_signal);
 					LOG_INF("Power mode change requested, exiting sync thread.");
@@ -295,7 +354,10 @@ void sync_thread(void)
 				if (timeout_counter >= timeout_threshold && current_power_mode == POWER_HIGH_MODE_SYNC) {
 					current_power_mode = POWER_HIGH_MODE_ADV;	
 					LOG_INF("Power mode changed to HIGH_MODE_ADV due to timeout.");	
-					k_poll_signal_raise(&mode_switch_signal, 0);
+					
+					// k_poll_signal_raise(&mode_switch_signal, 0); // <-- DELETE THIS LINE
+					
+					goto mode_switch;
 				}
 				continue;
 			} else {
@@ -311,7 +373,8 @@ sync_established:
 			if (sync_events[1].sem->count > 0){
 				k_sem_take(&sem_per_sync_lost, K_NO_WAIT);
 				LOG_INF("Periodic sync lost, re-establishing.");
-				continue;
+				//continue;
+				goto mode_switch;
 			} else if (sync_events[2].signal->signaled) {
 				k_poll_signal_reset(&mode_switch_signal);
 				LOG_INF("Power mode change requested, exiting sync thread.");
@@ -321,17 +384,47 @@ sync_established:
 	
 	}
 mode_switch:
+	is_shutting_down = true;
+    LOG_INF("Entered `mode_switch` cleanup block."); 
+
+	bt_le_scan_stop();
+
+    // Unregister the sync callbacks by registering NULL. Gemini suggestion 
+	// but I can't find what this function does to verify if this is correct
+    //bt_le_per_adv_sync_cb_register(NULL);
+
+	// Unsubscribe from PAST. The NULL parameter handles
+    // the general subscription created at the start of the thread.
+    err = bt_le_per_adv_sync_transfer_unsubscribe(NULL);
+    if (err) {
+        // This may return an error if there was no active subscription,
+        // which is okay. We log it but don't treat it as a fatal error.
+        LOG_WRN("bt_le_per_adv_sync_transfer_unsubscribe failed (err %d)", err);
+    }
+
 	if (default_sync) {
 		bt_le_per_adv_sync_delete(default_sync);
 		default_sync = NULL;
 	}
+
 	if (default_conn) {
-		bt_le_per_adv_sync_transfer_unsubscribe(default_conn);
+		LOG_INF("`default_conn` is valid, calling unsubscribe."); 
+
 		bt_conn_disconnect(default_conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
 		bt_conn_unref(default_conn);
 		default_conn = NULL;
 	}
-	bt_le_adv_stop();
+
+    if (is_legacy_advertising) {
+        int stop_err = bt_le_adv_stop();
+        if (stop_err) {
+            LOG_ERR("bt_le_adv_stop failed (err %d)", stop_err);
+        }
+        is_legacy_advertising = false;
+    }	
+
+	// Unregister bt connection callbacks
+	bt_conn_cb_unregister(&sync_conn_cb);
 	LOG_INF("Exiting sync thread due to power mode change.");
 	return ;
 }

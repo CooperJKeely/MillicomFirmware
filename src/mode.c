@@ -95,20 +95,34 @@ void adc_timer_handler(struct k_work *dummy){
     // This function is called periodically to simulate ADC readings
     // In a real application, you would read from an ADC here
     // For this example, we will just print a message
-    printk("ADC Timer Handler: Simulating ADC reading\n");
-    readADC(); // Simulated ADC value
+    //printk("ADC Timer Handler: Simulating ADC reading\n");
+
+    readADC(); // Checl ADC values
     int32_t adc_value = adc_outputs_mv[SUPER_CAP_IDX]; 
-    power_mode_t mode;
+    power_mode_t new_mode;
+
+    // Determine the power level (based on voltage)
     if(adc_value < 1000){
-        mode = POWER_LOW_MODE_NONE;
+        new_mode = POWER_LOW_MODE_NONE;
     } else if(adc_value < 2000){
-        mode = POWER_MED_MODE_SYNC;
-    } else{
-        mode = POWER_HIGH_MODE_SYNC;
+        new_mode = POWER_MED_MODE_SYNC;
+    } else {
+        // If voltage is high, the system should be in a high-power state.
+        // If it's already in a high-power sub-state (_SYNC or _ADV),
+        // we should not interfere with its role. 
+        if (current_power_mode == POWER_HIGH_MODE_SYNC || current_power_mode == POWER_HIGH_MODE_ADV) {
+            return; // Do nothing.
+        }
+
+        // If we are not already in a high-power state, transition into one. 
+        new_mode = POWER_HIGH_MODE_SYNC;
     }
-    if(mode != current_power_mode){
-        current_power_mode = mode;
+
+    // Signal a change if voltage level is different than the current one.
+    if(new_mode != current_power_mode){
+        current_power_mode = new_mode;
         k_poll_signal_raise(&mode_switch_signal, 0);
+        printk("Super Cap Voltage is %d mv. ",adc_value);
         printk("Power mode changed to: %d\n", current_power_mode);
     }
 }
