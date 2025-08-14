@@ -22,11 +22,7 @@ config MILLIMOBILE_CMD
 
 config MILLIMOBILE_DEV_KIT
 	bool "Enable devkit options"
-	select LOG
-	select LOG_BACKEND_SHOW_COLOR
-	select LOG_PRINTK
-	select UART_CONSOLE
-	select LOG_BACKEND_UART 
+	select LOGGING
 	default n
 
 config MILLIMOBILE_BOT
@@ -36,5 +32,17 @@ config MILLIMOBILE_BOT
 	select GPIO
 	default n  
 
+config LOGGING
+	bool "Enable Logging"
+	select LOG
+	select LOG_BACKEND_SHOW_COLOR
+	select LOG_PRINTK
+	default n
 
+config RTT
+	bool "Enable RTT"
+	select RTT_CONSOLE
+	select USE_SEGGER_RTT
+	select LOG_BACKEND_RTT
+	select LOGGING
 endmenu
