@@ -23,13 +23,13 @@ static struct bt_uuid_128 pawr_char_uuid =
 	BT_UUID_INIT_128(BT_UUID_128_ENCODE(0x12345678, 0x1234, 0x5678, 0x1234, 0x56789abcdef1));
 static uint16_t pawr_attr_handle;
 static const struct bt_le_per_adv_param per_adv_params = {
-	.interval_min = 0xFF,
-	.interval_max = 0xFF,
+	.interval_min = 0x320,
+	.interval_max = 0x320,
 	.options = 0,
 	.num_subevents = NUM_SUBEVENTS,
-	.subevent_interval = 0x50,
+	.subevent_interval = 0x10,
 	.response_slot_delay = 0x5,
-	.response_slot_spacing = 0x50,
+	.response_slot_spacing = 0x5,
 	.num_response_slots = NUM_RSP_SLOTS,
 };
 

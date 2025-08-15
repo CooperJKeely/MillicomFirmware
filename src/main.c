@@ -36,8 +36,8 @@ ROBOT_STEP_TIME is the time between robot steps.
 
 //TIMING (all ms)
 #define ADC_TIME 10 // Time delay to allow ADC reads of all channels
-#define MOTOR_SHUTOFF_TIME 50 // Time delay to shutoff motors after being triggered
-#define ROBOT_STEP_TIME 150 // Time delay between robot steps
+#define MOTOR_SHUTOFF_TIME 1 // Time delay to shutoff motors after being triggered
+#define ROBOT_STEP_TIME 500 // Time delay between robot steps
 
 // Define pins/state for capacitors
 uint16_t cap_switch_state = 0; // 0: to supercap, 1: to motor cap
@@ -164,15 +164,19 @@ static const struct gpio_dt_spec buttons[] = {
 
 static struct gpio_callback button_cbs[ARRAY_SIZE(buttons)];
 /* Callback for button 0 */
-void button0_pressed(const struct device *dev, struct gpio_callback *cb, uint32_t pins){
+static inline void set_signal_check(){
+        if(current_power_mode == POWER_LOW_MODE_NONE) return;
         k_poll_signal_raise(&mode_switch_signal, 0);
+}
+void button0_pressed(const struct device *dev, struct gpio_callback *cb, uint32_t pins){
+        set_signal_check();
         current_power_mode = POWER_LOW_MODE_NONE;
         printk("Button 0 pressed, new mode: %d\n", current_power_mode);
 }
 
 /* Callback for button 1 */
 void button1_pressed(const struct device *dev, struct gpio_callback *cb, uint32_t pins){
-        k_poll_signal_raise(&mode_switch_signal, 0);
+        set_signal_check();
         current_power_mode = POWER_MED_MODE_SYNC;
         printk("Button 1 pressed, new mode: %d\n", current_power_mode);
 }
@@ -180,14 +184,14 @@ void button1_pressed(const struct device *dev, struct gpio_callback *cb, uint32_
 
 /* Callback for button 2 */
 void button2_pressed(const struct device *dev, struct gpio_callback *cb, uint32_t pins){
-        k_poll_signal_raise(&mode_switch_signal, 0);
+        set_signal_check();
         current_power_mode = POWER_HIGH_MODE_SYNC;
         printk("Button 2 pressed, new mode: %d\n", current_power_mode);
 }
 
 /* Callback for button 3 */
 void button3_pressed(const struct device *dev, struct gpio_callback *cb, uint32_t pins){
-        k_poll_signal_raise(&mode_switch_signal, 0);
+        set_signal_check();
         current_power_mode = POWER_HIGH_MODE_ADV;
         printk("Button 3 pressed, new mode: %d\n", current_power_mode);
 }
@@ -215,7 +219,7 @@ static int init_buttons(void)
 
         gpio_init_callback(&button_cbs[i], button_callbacks[i], BIT(btn->pin));
         gpio_add_callback(btn->port, &button_cbs[i]);
-        gpio_pin_interrupt_configure_dt(btn, GPIO_INT_EDGE_TO_ACTIVE);
+        gpio_pin_interrupt_configure_dt(btn, GPIO_INT_LEVEL_ACTIVE);
     }
     return 0;
 }
@@ -252,6 +256,7 @@ int main(void){
         current_power_mode = POWER_MED_MODE_SYNC; 
         LOG_INF("Entering main loop, current power mode: %d", current_power_mode);
         while(1){
+                LOG_INF("BEGINNING WHILE LOOP MAIN");
                 if(current_power_mode == POWER_LOW_MODE_NONE){
                         LOG_INF("Power mode is low, continue");
                 }else if (current_power_mode == POWER_MED_MODE_SYNC || current_power_mode == POWER_HIGH_MODE_SYNC){
@@ -261,6 +266,9 @@ int main(void){
                         LOG_INF("Power mode is high, starting adv thread");
                         adv_thread();
                 }
-                k_sleep(K_MSEC(1000));
+                LOG_INF("BEFORE KSLEEP MAIN");
+                k_sleep(K_MSEC(2000));
+                LOG_INF("After ksleep");
+
         }
 }

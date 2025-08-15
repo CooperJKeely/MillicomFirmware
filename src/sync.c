@@ -387,7 +387,6 @@ mode_switch:
 	is_shutting_down = true;
     LOG_INF("Entered `mode_switch` cleanup block."); 
 
-	bt_le_scan_stop();
 
     // Unregister the sync callbacks by registering NULL. Gemini suggestion 
 	// but I can't find what this function does to verify if this is correct
@@ -396,6 +395,9 @@ mode_switch:
 	// Unsubscribe from PAST. The NULL parameter handles
     // the general subscription created at the start of the thread.
     err = bt_le_per_adv_sync_transfer_unsubscribe(NULL);
+
+	bt_le_scan_stop();
+
     if (err) {
         // This may return an error if there was no active subscription,
         // which is okay. We log it but don't treat it as a fatal error.
