@@ -10,6 +10,7 @@ static K_SEM_DEFINE(sem_per_adv, 0, 1);
 static K_SEM_DEFINE(sem_per_sync, 0, 1);
 static K_SEM_DEFINE(sem_per_sync_lost, 0, 1);
 static K_SEM_DEFINE(sem_handshake_done, 0, 1); 
+static K_SEM_DEFINE(sem_cleanup_done, 0, 1);
 
 static struct k_poll_event sync_events[] = {
 	K_POLL_EVENT_STATIC_INITIALIZER(K_POLL_TYPE_SEM_AVAILABLE, K_POLL_MODE_NOTIFY_ONLY,
@@ -68,7 +69,11 @@ static void term_cb(struct bt_le_per_adv_sync *sync,
 
 	default_sync = NULL;
 
-	k_sem_give(&sem_per_sync_lost);
+	if(is_shutting_down){
+		k_sem_give(&sem_cleanup_done);
+	} else{
+		k_sem_give(&sem_per_sync_lost);
+	}
 }
 
 static bool print_ad_field(struct bt_data *data, void *user_data)
@@ -387,27 +392,29 @@ mode_switch:
 	is_shutting_down = true;
     LOG_INF("Entered `mode_switch` cleanup block."); 
 
-
-    // Unregister the sync callbacks by registering NULL. Gemini suggestion 
-	// but I can't find what this function does to verify if this is correct
-    //bt_le_per_adv_sync_cb_register(NULL);
+	if (default_sync) {
+		// Request sync deletion
+		bt_le_per_adv_sync_delete(default_sync);
+		
+		// wait for termination callback (term_cb) to confirm deletion
+		// add a timeout as a failsafe
+		if (k_sem_take(&sem_cleanup_done, K_SECONDS(2)) != 0) {
+			LOG_WRN("Timeout waiting for sync delete confirmation.");
+		}
+	}
 
 	// Unsubscribe from PAST. The NULL parameter handles
     // the general subscription created at the start of the thread.
     err = bt_le_per_adv_sync_transfer_unsubscribe(NULL);
-
-	bt_le_scan_stop();
-
     if (err) {
         // This may return an error if there was no active subscription,
         // which is okay. We log it but don't treat it as a fatal error.
         LOG_WRN("bt_le_per_adv_sync_transfer_unsubscribe failed (err %d)", err);
     }
 
-	if (default_sync) {
-		bt_le_per_adv_sync_delete(default_sync);
-		default_sync = NULL;
-	}
+	
+	// Unregister bt connection callbacks
+	bt_conn_cb_unregister(&sync_conn_cb);
 
 	if (default_conn) {
 		LOG_INF("`default_conn` is valid, calling unsubscribe."); 
@@ -425,8 +432,6 @@ mode_switch:
         is_legacy_advertising = false;
     }	
 
-	// Unregister bt connection callbacks
-	bt_conn_cb_unregister(&sync_conn_cb);
-	LOG_INF("Exiting sync thread due to power mode change.");
+	LOG_INF("Exiting sync thread.");
 	return ;
 }
