@@ -47,6 +47,7 @@ typedef struct{
 static subevent_state_t subevent_states[NUM_SUBEVENTS] = {0};
 static int heartbeat_threshold = 5;
 static uint8_t num_synced;
+K_MUTEX_DEFINE(set_subevent);
 
 static inline bool check_for_lost_connections(){
 	bool lost = false;
@@ -87,9 +88,13 @@ static void request_cb(struct bt_le_ext_adv *adv, const struct bt_le_per_adv_dat
 		subevent_data_params[i].response_slot_count = NUM_RSP_SLOTS;
 		subevent_data_params[i].data = buf;
 
+		err = k_mutex_lock(&set_subevent, K_NO_WAIT);
+		if(err != 0) continue;
+
 		if(!subevent_states[idx].free){
 			subevent_states[idx].heartbeat++;
 		}
+		k_mutex_unlock(&set_subevent);
 
 	}
 
@@ -119,9 +124,15 @@ static struct bt_conn *default_conn;
 static void response_cb(struct bt_le_ext_adv *adv, struct bt_le_per_adv_response_info *info,
 		     struct net_buf_simple *buf){
 	if (buf) {
-		if(!subevent_states[info->response_slot].free){
-			subevent_states[info->response_slot].heartbeat--;
+		int err = k_mutex_lock(&set_subevent, K_NO_WAIT);
+		if(err != 0) return;
+
+		if(!subevent_states[info->subevent].free){
+			subevent_states[info->subevent].heartbeat--;
 		}
+		check_for_lost_connections();
+		k_mutex_unlock(&set_subevent);
+
 		printk("Response: subevent %d, slot %d\n", info->subevent, info->response_slot);
 		// Begin Debug
 		uint8_t result = buf->data[buf->len - 1];
@@ -377,19 +388,20 @@ start_connection:
 			goto disconnect;
 		}
 
-		check_for_lost_connections();
-
 		// find a free subevent and allocate it to the sync
-		for(int i = 0; i < NUM_SUBEVENTS; i ++){
-			if(subevent_states[i].free){
-				sync_config.subevent = i;
-				subevent_states[i].free = false;
-				subevent_states[i].heartbeat = 0;
-				num_synced ++;
-				break;
+		err = k_mutex_lock(&set_subevent, K_NO_WAIT);	
+		if(err == 0){
+			for(int i = 0; i < NUM_SUBEVENTS; i ++){
+				if(subevent_states[i].free){
+					sync_config.subevent = i;
+					subevent_states[i].free = false;
+					subevent_states[i].heartbeat = 0;
+					num_synced ++;
+					break;
+				}
 			}
 		}
-
+		k_mutex_unlock(&set_subevent);
 		sync_config.response_slot = 0; 
 
 		write_params.func = write_func;
@@ -437,10 +449,6 @@ disconnected:
 
 	LOG_INF("Maximum number of syncs onboarded");
 	while (num_synced == MAX_SYNCS) {
-		if (check_for_lost_connections()) {
-			LOG_DBG("Lost connection start scanning");
-		};
-
 		err = k_poll(&events[2], 1, K_SECONDS(10));
 		if (err == 0 && events[2].signal->signaled) {
 			k_poll_signal_reset(events[2].signal);
