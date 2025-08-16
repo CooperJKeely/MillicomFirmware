@@ -163,20 +163,17 @@ static const struct gpio_dt_spec buttons[] = {
 };
 
 static struct gpio_callback button_cbs[ARRAY_SIZE(buttons)];
+
 /* Callback for button 0 */
-static inline void set_signal_check(){
-        if(current_power_mode == POWER_LOW_MODE_NONE) return;
-        k_poll_signal_raise(&mode_switch_signal, 0);
-}
 void button0_pressed(const struct device *dev, struct gpio_callback *cb, uint32_t pins){
-        set_signal_check();
+        k_poll_signal_raise(&mode_switch_signal, 0);
         current_power_mode = POWER_LOW_MODE_NONE;
         printk("Button 0 pressed, new mode: %d\n", current_power_mode);
 }
 
 /* Callback for button 1 */
 void button1_pressed(const struct device *dev, struct gpio_callback *cb, uint32_t pins){
-        set_signal_check();
+        k_poll_signal_raise(&mode_switch_signal, 0);
         current_power_mode = POWER_MED_MODE_SYNC;
         printk("Button 1 pressed, new mode: %d\n", current_power_mode);
 }
@@ -184,14 +181,14 @@ void button1_pressed(const struct device *dev, struct gpio_callback *cb, uint32_
 
 /* Callback for button 2 */
 void button2_pressed(const struct device *dev, struct gpio_callback *cb, uint32_t pins){
-        set_signal_check();
+        k_poll_signal_raise(&mode_switch_signal, 0);
         current_power_mode = POWER_HIGH_MODE_SYNC;
         printk("Button 2 pressed, new mode: %d\n", current_power_mode);
 }
 
 /* Callback for button 3 */
 void button3_pressed(const struct device *dev, struct gpio_callback *cb, uint32_t pins){
-        set_signal_check();
+        k_poll_signal_raise(&mode_switch_signal, 0);
         current_power_mode = POWER_HIGH_MODE_ADV;
         printk("Button 3 pressed, new mode: %d\n", current_power_mode);
 }

@@ -167,6 +167,11 @@ static void device_found(const bt_addr_le_t *addr, int8_t rssi, uint8_t type,
 	char name[NAME_LEN];
 	int err;
 
+	// Device found as mode switch initiated. 
+	if(is_shutting_down) {
+		return;
+	}
+
 	if (default_conn) {
 		return;
 	}
@@ -352,7 +357,6 @@ void adv_thread(void){
 		err = bt_gatt_write(default_conn, &write_params);
 		if (err) {
 			LOG_WRN("Write failed (err %d)", err);
-			num_synced--;
 			goto disconnect;
 		}
 
@@ -361,6 +365,7 @@ void adv_thread(void){
 		err = k_sem_take(&sem_written, K_SECONDS(10));
 		if (err) {
 			LOG_WRN("Timed out during GATT write");
+			// might not need to decrement
 			num_synced--;
 			goto disconnect;
 		}
@@ -376,7 +381,8 @@ disconnect:
 
 		err = bt_conn_disconnect(default_conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
 		if (err != 0 && err != -ENOTCONN) {
-			return ;
+        	LOG_ERR("Fatal disconnect error (%d). Forcing full cleanup.", err);
+			goto mode_switch; // Redirect to the  cleanup block.
 		}
 
 disconnected:
@@ -405,8 +411,16 @@ mode_switch:
 		bt_le_per_adv_stop(pawr_adv);
 		bt_le_ext_adv_delete(pawr_adv);
 		bt_le_scan_stop();
+
 		if (default_conn) {
 			bt_conn_disconnect(default_conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
+			
+			// Wait for the disconnection to be confirmed by the callback.
+			// Add a timeout as a failsafe.
+			if (k_sem_take(&sem_disconnected, K_SECONDS(2)) != 0) {
+				LOG_WRN("Timeout waiting for disconnect confirmation.");
+			}
+
 			bt_conn_unref(default_conn);
 			default_conn = NULL;
 		}
