@@ -9,7 +9,7 @@
 #include "mode.h"
 
 #define NUM_RSP_SLOTS 1
-#define NUM_SUBEVENTS 1
+#define NUM_SUBEVENTS 2
 #define PACKET_SIZE   5
 #define NAME_LEN      30
 

@@ -11,8 +11,8 @@
 		{
 			"type": "nrf-connect",
 			"request": "launch",
-			"name": "Launch bot_build",
-			"config": "${workspaceFolder}/bot_build",
+			"name": "Launch build_devkit",
+			"config": "${workspaceFolder}/build_devkit",
 			"runToEntryPoint": "main"
 		}
 	]
