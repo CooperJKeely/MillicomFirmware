@@ -40,7 +40,30 @@ static uint8_t backing_store[NUM_SUBEVENTS][PACKET_SIZE];
 BUILD_ASSERT(ARRAY_SIZE(bufs) == ARRAY_SIZE(subevent_data_params));
 BUILD_ASSERT(ARRAY_SIZE(backing_store) == ARRAY_SIZE(subevent_data_params));
 
-static uint8_t counter;
+typedef struct{
+	uint32_t heartbeat;
+	bool free;
+} subevent_state_t;
+static subevent_state_t subevent_states[NUM_SUBEVENTS] = {0};
+static int heartbeat_threshold = 5;
+static uint8_t num_synced;
+
+static inline bool check_for_lost_connections(){
+	bool lost = false;
+	for(int i = 0; i < NUM_SUBEVENTS; i ++){
+		if(subevent_states[i].heartbeat >= heartbeat_threshold && !subevent_states[i].free){
+			num_synced --;
+			subevent_states[i].free = true;
+			subevent_states[i].heartbeat = 0;
+			lost = true;
+		}
+	}
+	return lost;
+}
+
+
+static int counter = 0;
+
 #if defined(CONFIG_MILLIMOBILE_CMD)
 // command variable from main
 extern uint8_t command;
@@ -58,13 +81,18 @@ static void request_cb(struct bt_le_ext_adv *adv, const struct bt_le_per_adv_dat
 		/* Data being sent to the sync device, and then sent back*/
 		// Original: buf->data[buf->len - 1] = counter++;
 		buf->data[buf->len - 1] = command;
-
-		subevent_data_params[i].subevent =
-			(request->start + i) % per_adv_params.num_subevents;
+		size_t idx = (request->start + i) % per_adv_params.num_subevents;
+		subevent_data_params[i].subevent = idx;
 		subevent_data_params[i].response_slot_start = 0;
 		subevent_data_params[i].response_slot_count = NUM_RSP_SLOTS;
 		subevent_data_params[i].data = buf;
+
+		if(!subevent_states[idx].free){
+			subevent_states[idx].heartbeat++;
+		}
+
 	}
+
 
 	err = bt_le_per_adv_set_subevent_data(adv, to_send, subevent_data_params);
 	if (err) {
@@ -91,6 +119,9 @@ static struct bt_conn *default_conn;
 static void response_cb(struct bt_le_ext_adv *adv, struct bt_le_per_adv_response_info *info,
 		     struct net_buf_simple *buf){
 	if (buf) {
+		if(!subevent_states[info->response_slot].free){
+			subevent_states[info->response_slot].heartbeat--;
+		}
 		printk("Response: subevent %d, slot %d\n", info->subevent, info->response_slot);
 		// Begin Debug
 		uint8_t result = buf->data[buf->len - 1];
@@ -239,7 +270,6 @@ void init_bufs(void){
 					      ARRAY_SIZE(backing_store[i]));
 	}
 }
-static uint8_t num_synced;
 
 void adv_thread(void){
 	int err;
@@ -249,12 +279,17 @@ void adv_thread(void){
 	struct pawr_timing sync_config;
 
 	is_shutting_down = false;
+	num_synced = 0;
+	for(int i = 0; i < NUM_SUBEVENTS; i ++){
+		subevent_states[i].heartbeat = 0;
+		subevent_states[i].free = true;
+	}
+
 
 	// Register the callbacks
 	bt_conn_cb_register(&adv_conn_cb);
 
 	init_bufs();
-	num_synced = 0;
 	k_poll_signal_reset(events[2].signal);
 
 	LOG_INF("'adv_thread' has started");
@@ -288,6 +323,7 @@ void adv_thread(void){
 		return ;
 	}
 
+start_connection:
 	while (num_synced < MAX_SYNCS) {
 
 		/* Enable continuous scanning */
@@ -301,7 +337,9 @@ void adv_thread(void){
 
 		/* Wait for either remote info available or involuntary disconnect */
 		err = k_poll(events, ARRAY_SIZE(events), K_FOREVER);
-		if (err == 0 && events[2].signal->signaled){
+		if(err != 0) return;		
+
+		if (events[2].signal->signaled){
 			k_poll_signal_reset(events[2].signal);
 			goto mode_switch;
 		}	
@@ -339,9 +377,20 @@ void adv_thread(void){
 			goto disconnect;
 		}
 
-		sync_config.subevent = num_synced % NUM_SUBEVENTS;
-		sync_config.response_slot = num_synced / NUM_SUBEVENTS;
-		num_synced++;
+		check_for_lost_connections();
+
+		// find a free subevent and allocate it to the sync
+		for(int i = 0; i < NUM_SUBEVENTS; i ++){
+			if(subevent_states[i].free){
+				sync_config.subevent = i;
+				subevent_states[i].free = false;
+				subevent_states[i].heartbeat = 0;
+				num_synced ++;
+				break;
+			}
+		}
+
+		sync_config.response_slot = 0; 
 
 		write_params.func = write_func;
 		write_params.handle = pawr_attr_handle;
@@ -352,7 +401,6 @@ void adv_thread(void){
 		err = bt_gatt_write(default_conn, &write_params);
 		if (err) {
 			LOG_WRN("Write failed (err %d)", err);
-			num_synced--;
 			goto disconnect;
 		}
 
@@ -361,8 +409,8 @@ void adv_thread(void){
 		err = k_sem_take(&sem_written, K_SECONDS(10));
 		if (err) {
 			LOG_WRN("Timed out during GATT write");
-			num_synced--;
 			goto disconnect;
+
 		}
 
 		LOG_WRN("PAwR config written to sync %d, disconnecting", num_synced - 1);
@@ -388,14 +436,18 @@ disconnected:
 	}
 
 	LOG_INF("Maximum number of syncs onboarded");
+	while (num_synced == MAX_SYNCS) {
+		if (check_for_lost_connections()) {
+			LOG_DBG("Lost connection start scanning");
+		};
 
-	while (true) {
-		err = k_poll(&events[2], 1, K_FOREVER);
+		err = k_poll(&events[2], 1, K_SECONDS(10));
 		if (err == 0 && events[2].signal->signaled) {
 			k_poll_signal_reset(events[2].signal);
 			goto mode_switch;
 		}
 	}
+	goto start_connection;
 
 mode_switch:
 		is_shutting_down = true;

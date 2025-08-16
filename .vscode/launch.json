@@ -7,6 +7,13 @@
 			"name": "Launch build_1",
 			"config": "${workspaceFolder}/build_1",
 			"runToEntryPoint": "main"
+		},
+		{
+			"type": "nrf-connect",
+			"request": "launch",
+			"name": "Launch build_devkit",
+			"config": "${workspaceFolder}/build_devkit",
+			"runToEntryPoint": "main"
 		}
 	]
 }
