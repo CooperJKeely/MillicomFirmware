@@ -10,7 +10,7 @@
 #include "cmdParser.h"
 
 #define NAME_LEN 30
-#define timeout_threshold 3
+#define timeout_threshold 4
 
 
 int bt_le_per_adv_set_response_data(struct bt_le_per_adv_sync *per_adv_sync,

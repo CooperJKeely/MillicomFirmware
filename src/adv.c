@@ -33,6 +33,23 @@ static const struct bt_le_per_adv_param per_adv_params = {
 	.num_response_slots = NUM_RSP_SLOTS,
 };
 
+// This struct defines the parameters for a low-power, passive scan.
+static struct bt_le_scan_param low_power_passive_scan_params = {
+    // The scanner will only listen for advertisements
+    .type       = BT_LE_SCAN_TYPE_PASSIVE,
+
+    // This option filters out duplicate
+    // advertising packets. The 'device_found' callback will only be called
+    // once for each unique device discovered.
+    .options    = BT_LE_SCAN_OPT_FILTER_DUPLICATE,
+
+    // This sets the scan interval 
+    .interval   = BT_GAP_SCAN_FAST_INTERVAL * 4.25,
+
+    // This sets the scan window 
+    .window     = BT_GAP_SCAN_FAST_WINDOW * 4.25,
+};
+
 static struct bt_le_per_adv_subevent_data_params subevent_data_params[NUM_SUBEVENTS];
 static struct net_buf_simple bufs[NUM_SUBEVENTS];
 static uint8_t backing_store[NUM_SUBEVENTS][PACKET_SIZE];
@@ -90,10 +107,11 @@ static void request_cb(struct bt_le_ext_adv *adv, const struct bt_le_per_adv_dat
 
 		err = k_mutex_lock(&set_subevent, K_NO_WAIT);
 		if(err != 0) continue;
-
 		if(!subevent_states[idx].free){
 			subevent_states[idx].heartbeat++;
 		}
+		check_for_lost_connections();
+
 		k_mutex_unlock(&set_subevent);
 
 	}
@@ -126,11 +144,9 @@ static void response_cb(struct bt_le_ext_adv *adv, struct bt_le_per_adv_response
 	if (buf) {
 		int err = k_mutex_lock(&set_subevent, K_NO_WAIT);
 		if(err != 0) return;
-
 		if(!subevent_states[info->subevent].free){
-			subevent_states[info->subevent].heartbeat--;
+			subevent_states[info->subevent].heartbeat = 0;
 		}
-		check_for_lost_connections();
 		k_mutex_unlock(&set_subevent);
 
 		printk("Response: subevent %d, slot %d\n", info->subevent, info->response_slot);
@@ -342,8 +358,8 @@ void adv_thread(void){
 start_connection:
 	while (num_synced < MAX_SYNCS) {
 
-		/* Enable continuous scanning */
-		err = bt_le_scan_start(BT_LE_SCAN_PASSIVE_CONTINUOUS, device_found);
+		/* Enable passive scanning */
+		err = bt_le_scan_start(&low_power_passive_scan_params, device_found);
 		if (err) {
 			LOG_WRN("Scanning failed to start (err %d)", err);
 			return ;
@@ -427,7 +443,7 @@ start_connection:
 		if (err) {
 			LOG_WRN("Timed out during GATT write");
 			// might not need to decrement
-			num_synced--;
+			//num_synced--;
 			goto disconnect;
 
 		}
@@ -457,6 +473,7 @@ disconnected:
 
 	LOG_INF("Maximum number of syncs onboarded");
 	while (num_synced == MAX_SYNCS) {
+		LOG_INF("Number of synced devices: %d\n", num_synced);
 		err = k_poll(&events[2], 1, K_SECONDS(10));
 		if (err == 0 && events[2].signal->signaled) {
 			k_poll_signal_reset(events[2].signal);

@@ -30,6 +30,13 @@ static struct __packed {
 	uint8_t response_slot;
 } pawr_timing;
 
+// Define the standard BLE advertising scan parameters. Defines the timing intervals.
+static const struct bt_le_adv_param sync_scan_param = {
+	.options = BT_LE_ADV_OPT_CONN,
+	.interval_min = BT_GAP_ADV_SLOW_INT_MIN * .5,
+	.interval_max = BT_GAP_ADV_SLOW_INT_MAX * .5,
+	.peer = NULL,
+};
 
 static void sync_cb(struct bt_le_per_adv_sync *sync, struct bt_le_per_adv_sync_synced_info *info)
 {
@@ -314,7 +321,8 @@ void sync_thread(void)
 
 	while(1){
 		uint8_t timeout_counter = 0;
-		err = bt_le_adv_start(BT_LE_ADV_CONN_FAST_1, ad, ARRAY_SIZE(ad), NULL, 0);
+		// Defines the scan timing parameters for the synchronizer
+		err = bt_le_adv_start(&sync_scan_param, ad, ARRAY_SIZE(ad), NULL, 0);
 		if (err && err != -EALREADY) {
 			LOG_ERR("Advertising failed to start (err %d)", err);
 			return ;
