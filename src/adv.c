@@ -22,18 +22,29 @@ static struct k_poll_event events[] = {
 static struct bt_uuid_128 pawr_char_uuid =
 	BT_UUID_INIT_128(BT_UUID_128_ENCODE(0x12345678, 0x1234, 0x5678, 0x1234, 0x56789abcdef1));
 static uint16_t pawr_attr_handle;
+
+// This struct defines the timing schedule for the PAwR broadcast
 static const struct bt_le_per_adv_param per_adv_params = {
-	.interval_min = 0x320,
+	// The main interval for the entire advertising event.
+	// Value is in units of 1.25 ms. Ex. 0x320 = 800 * 1.25ms = 1000ms.
+	.interval_min = 0x320, 
 	.interval_max = 0x320,
 	.options = 0,
+	// The number of distinct data broadcasts (subevents) within each main interval.
 	.num_subevents = NUM_SUBEVENTS,
+	// The time between the start of each subevent. (Units of 1.25 ms)
 	.subevent_interval = 0x10,
+	// The delay after a subevent broadcast before the first response slot opens. 
+	// (Units of 1.25 ms)
 	.response_slot_delay = 0x5,
+	// The time between the start of consecutive response slots.
+	// (Units of 1.25 ms)
 	.response_slot_spacing = 0x5,
+	// The number of response slots available after each subevent.
 	.num_response_slots = NUM_RSP_SLOTS,
 };
 
-// This struct defines the parameters for a low-power, passive scan.
+// This struct defines the parameters for a low-power, passive BLE scan.
 static struct bt_le_scan_param low_power_passive_scan_params = {
     // The scanner will only listen for advertisements
     .type       = BT_LE_SCAN_TYPE_PASSIVE,
@@ -43,10 +54,10 @@ static struct bt_le_scan_param low_power_passive_scan_params = {
     // once for each unique device discovered.
     .options    = BT_LE_SCAN_OPT_FILTER_DUPLICATE,
 
-    // This sets the scan interval 
+    // This sets the scan interval. Value is in units of .625 ms.
     .interval   = BT_GAP_SCAN_FAST_INTERVAL * 4.25,
 
-    // This sets the scan window 
+    // This sets the scan window. Units of .625 ms.
     .window     = BT_GAP_SCAN_FAST_WINDOW * 4.25,
 };
 

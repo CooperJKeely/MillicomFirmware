@@ -136,7 +136,7 @@ static void recv_cb(struct bt_le_per_adv_sync *sync,
 		#if defined(CONFIG_MILLIMOBILE_CMD)
 			// Copy buffer data (command) into relevant variable
 			// Parse command & store result in buffer
-			uint8_t result = parse_command(0);
+			uint8_t result = parse_command();
 			//uint8_t result = 25;
 			buf->data[buf->len - 1] = result;
 			printk("Sending Data: %d\n", result);
@@ -244,7 +244,7 @@ void connected(struct bt_conn *conn, uint8_t err)
 		return;
 	}
 
-	LOG_INF("--> Log: `connected` callback entered."); 
+	//LOG_INF("--> Log: `connected` callback entered."); 
 
 	printk("Connected, err 0x%02X %s\n", err, bt_hci_err_to_str(err));
 
@@ -264,7 +264,7 @@ void connected(struct bt_conn *conn, uint8_t err)
 
 void disconnected(struct bt_conn *conn, uint8_t reason)
 {
-	LOG_INF("--> Log: `disconnected` callback entered."); 
+	//LOG_INF("--> Log: `disconnected` callback entered."); 
 
 	if(is_shutting_down) {
         LOG_WRN("Disconnected callback ignored: thread is shutting down.");

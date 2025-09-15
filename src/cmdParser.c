@@ -1,24 +1,28 @@
 #include "cmdParser.h"
 
-uint8_t parse_command(uint8_t command){
+#include "sensor.c"
+
+uint8_t parse_command(){
     //LOG_ERR("Beginning Comand Parsing");
     switch(command) {
         case 0:
             // Temperature
-            return get_temperature();
+            return get_chip_temperature();
         case 1:
             // Standby
             return -1;
         case 2:
             // Capacitor
             return 0;   // Placeholder value
+        case 3: 
+            return i2c_get_temperature();
         default:
             // Default case - should never reach
             return 0;   // Placeholder value
     } 
 };
 
-int8_t get_temperature(void){
+int8_t get_chip_temperature(void){
     // This function reads the temperature from the onboard temperature sensor
     // returns the current temperature value in celsius formatted in hex
     int err = 0;

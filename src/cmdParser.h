@@ -3,6 +3,11 @@
 #include <zephyr/kernel.h>
 #include <zephyr/bluetooth/hci_vs.h>
 
-uint8_t parse_command(uint8_t command);
-int8_t get_temperature(void);
+// command variable from main
+extern uint8_t command;
+
+uint8_t parse_command();
+int8_t get_chip_temperature(void);
+
+
 #endif

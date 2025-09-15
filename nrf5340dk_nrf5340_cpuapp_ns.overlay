@@ -59,3 +59,34 @@
         zephyr,resolution = < 12 >;
 	};
 };
+
+&i2c1 { //Driver for I2C device
+
+    clock-frequency = <I2C_BITRATE_STANDARD>; //Set clock frequency to 100 kHz
+    status = "okay";
+    pinctrl-0 = <&i2c1_default>;
+	pinctrl-1 = <&i2c1_sleep>;
+    pinctrl-names = "default", "sleep";
+
+    hdc3022: hdc3022r@44{ //Defines device and SDA register
+        compatible = "i2c-device";
+        reg = < 0x44 >;
+        label = "temp_sensor";
+    };
+};
+
+&pinctrl { //Set pins for I2C device connection
+	/omit-if-no-ref/ i2c1_default: i2c1_default {
+		group1  {
+			psels = <NRF_PSEL(TWIM_SCL, 1, 14)>,
+					<NRF_PSEL(TWIM_SDA, 1, 15)>;
+		};
+	};
+	/omit-if-no-ref/ i2c1_sleep: i2c1_sleep {
+		group1  {
+			psels = <NRF_PSEL(TWIM_SCL, 1, 14)>,
+					<NRF_PSEL(TWIM_SDA, 1, 15)>;
+			low-power-enable;
+		};
+	};
+};
